@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import Toggle from "./Toggle";
 
 interface Props {
   defaultParent: string;
@@ -60,14 +61,11 @@ export default function NewProjectModal({
           </select>
         </label>
 
-        <label className="checkbox">
-          <input
-            type="checkbox"
-            checked={git}
-            onChange={(e) => setGit(e.target.checked)}
-          />
-          Initialize git repository
-        </label>
+        <Toggle
+          checked={git}
+          onChange={setGit}
+          label="Initialize git repository"
+        />
 
         <p className="muted">
           Creates the folder with <code>.gitignore</code> + <code>README.md</code>{" "}
