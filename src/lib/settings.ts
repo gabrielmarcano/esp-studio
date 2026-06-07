@@ -10,7 +10,8 @@ export interface Settings {
   mpyCross: string; // override path (only when useOwnBinaries); blank = bundled
   esptool: string; // override path (only when useOwnBinaries); blank = bundled
   port: string;
-  baud: string;
+  autoBaud: boolean; // true = app picks the flash speed (fast, auto-fallback)
+  baud: string; // manual flash baud, used only when autoBaud is off
   offset: string; // flash offset: 0x1000 for ESP32, 0x0 for ESP8266/S3/C3
   firmwarePath: string;
   compileOnUpload: boolean;
@@ -23,6 +24,7 @@ const DEFAULTS: Settings = {
   mpyCross: "",
   esptool: "",
   port: "",
+  autoBaud: true,
   baud: "460800",
   offset: "0x1000",
   firmwarePath: "",

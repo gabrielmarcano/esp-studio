@@ -346,8 +346,9 @@ body,
 }
 
 /* ---- toggle switch (label left, switch right) ---- */
+/* generous top margin: adjacent margins collapse, so this sets the real gap */
 .toggle-wrap {
-  margin: 8px 0 10px;
+  margin: 18px 0 6px;
 }
 /* `label.toggle` beats the `.modal label` column layout via equal specificity + order */
 label.toggle {

@@ -77,16 +77,32 @@ export default function SettingsModal({ settings, onSave, onClose, onAbout }: Pr
         <fieldset>
           <legend>Device & upload</legend>
           <label>
-            Baud (flash)
-            <input value={s.baud} onChange={(e) => set("baud", e.target.value)} />
-          </label>
-          <label>
             Flash offset
             <select value={s.offset} onChange={(e) => set("offset", e.target.value)}>
               <option value="0x1000">0x1000 (ESP32)</option>
               <option value="0x0">0x0 (ESP8266 / ESP32-S3 / C3)</option>
             </select>
           </label>
+          <Toggle
+            checked={s.autoBaud}
+            onChange={(v) => set("autoBaud", v)}
+            label="App-managed flash speed"
+            help={
+              "ESPStudio flashes at a fast speed and automatically retries slower if it " +
+              "fails, so you don't have to pick a baud rate. Turn this off only to force a " +
+              "specific speed."
+            }
+          />
+          {!s.autoBaud && (
+            <label>
+              Baud (flash)
+              <input
+                value={s.baud}
+                onChange={(e) => set("baud", e.target.value)}
+                placeholder="460800"
+              />
+            </label>
+          )}
           <Toggle
             checked={s.compileOnUpload}
             onChange={(v) => set("compileOnUpload", v)}

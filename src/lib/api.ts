@@ -87,13 +87,18 @@ export const uploadProject = (s: Settings) =>
   });
 
 // ---- firmware ----
+// App-managed mode flashes fast and the Rust side auto-falls-back to default
+// speed on failure; manual mode uses the user's configured baud.
+const FAST_BAUD = "460800";
+const flashBaud = (s: Settings) => (s.autoBaud ? FAST_BAUD : s.baud);
+
 export const flashFirmware = (s: Settings, erase: boolean) =>
   invoke<string>("flash_firmware", {
     args: {
       esptool: esp(s),
       port: s.port,
       bin_path: s.firmwarePath,
-      baud: s.baud,
+      baud: flashBaud(s),
       offset: s.offset,
       erase,
     },
