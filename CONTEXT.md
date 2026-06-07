@@ -7,7 +7,9 @@
 
 A cross-platform (macOS + Linux, Windows as a bonus) desktop IDE for the
 owner's **MicroPython ESP32/ESP8266** workflow. It does **not** reinvent device
-tooling — it wraps the CLIs the owner already uses.
+tooling — it **bundles and wraps** the standard CLIs (`mpremote`, `mpy-cross`,
+`esptool`) as sidecars, so there's nothing for the user to install. Branded
+**ESPStudio** (the repo/package stays `esp-studio`).
 
 **Product north star: a simplified Android Studio for MicroPython/ESP.** The current
 build is a working VSCode-like shell (sidebar tree, toolbar, Monaco, output console);
@@ -42,13 +44,17 @@ esp-doorbell, esp-mqtt-wol-proxy, roaster):
   and over a pure-Python GUI (worse editor). Owner already knows React (Expo app).
 - **React 19 + TypeScript + Vite** frontend.
 - **Monaco** (`@monaco-editor/react`) — the editor (same engine as VSCode).
-- **Settings live in `localStorage`** (frontend), passed to every Rust command —
-  so configured tool paths work even when the app is launched from Finder (minimal PATH).
+- **Settings live in `localStorage`** (frontend). Tool paths are now *optional overrides*:
+  blank means "use the bundled sidecar" (the default). The "Use my own binaries" toggle
+  gates the overrides.
 
 ## Architecture
 
-The Rust side is a set of thin subprocess wrappers. Every device/tool command takes the
-tool path as an argument (frontend supplies it from settings).
+The Rust side is a set of thin subprocess wrappers. Device/tool commands take an optional
+override path; `tool_path()` resolves it, falling back to the bundled sidecar (next to the
+exe in a build, or `src-tauri/binaries/<name>-<triple>` in dev). Tools are bundled via
+`bundle.externalBin` in `tauri.conf.json` and produced by `scripts/fetch-binaries.sh`.
+**All device/tool commands are `async`** so subprocess work never blocks the UI thread.
 
 ```
 src-tauri/src/
@@ -59,11 +65,13 @@ src/
   lib/api.ts                 # typed invoke() wrappers
   lib/settings.ts            # Settings type + localStorage load/save
   components/
-    Toolbar.tsx              # top buttons + port selector
+    Toolbar.tsx              # top buttons + port selector (lucide icons)
     FileTree.tsx             # recursive tree (used for LOCAL and DEVICE)
     Editor.tsx               # Monaco wrapper
+    Toggle.tsx               # switch-style toggle (optional info/help)
     SettingsModal.tsx
     NewProjectModal.tsx
+    AboutModal.tsx           # app + tool versions + licenses
   App.css                    # VSCode-like dark theme
 ```
 
@@ -79,8 +87,10 @@ src/
 | `upload_file` | `mpremote ... fs cp <local> :` | single-button upload |
 | `run_file` | `mpremote ... run <local>` | run without persisting |
 | `reset_device` | `mpremote ... reset` | soft reset |
-| `upload_project` | port of `build.py` | compile subdir `.py`→`.mpy` + upload whole project |
+| `detect_device` | `mpremote exec` probe + `esptool chip-id` | chip type + MicroPython presence/version, suggested flash offset (timeout-guarded) |
+| `upload_project` | port of `build.py` | compile subdir `.py`→`.mpy` (bundled `mpy-cross` binary) + upload whole project |
 | `flash_firmware` | `esptool erase-flash` + `write-flash` | flash MicroPython `.bin` |
+| `bundled_versions` / `override_versions` | manifest / live `--version` | About screen: bundled (instant) vs the user's own binaries |
 | `new_project` | std::fs + `git init` | scaffold folder + template + README + .gitignore |
 
 Templates in `new_project`: `"wifi"` (boot.py WiFi+WebREPL, main.py, env.template.py)
@@ -92,12 +102,14 @@ and `"blink"` (main.py only). Both get `.gitignore` + `README.md`.
 source "$HOME/.cargo/env"      # Rust was installed via rustup
 cd /Users/gabriel/Code/iot/esp-studio
 pnpm install                   # once
+./scripts/fetch-binaries.sh    # fetch bundled sidecars (gitignored) — once per OS
 pnpm tauri dev                 # dev window with hot reload
 pnpm tauri build               # production .app / .dmg (and Linux/Windows on those OSes)
 ```
 
-Prerequisites already present on this machine: Node 22, pnpm 11, Rust 1.96 (rustup),
-Xcode CLT, and the device tools (`mpremote`, `mpy_cross`, `esptool`).
+`src-tauri/binaries/` is gitignored; `fetch-binaries.sh` (needs Python 3) downloads
+esptool, freezes mpremote, and extracts mpy-cross, then writes `src-tauri/versions.json`.
+Prerequisites on this machine: Node 22, pnpm 11, Rust 1.96 (rustup), Xcode CLT, Python 3.
 
 ## Status
 
@@ -106,27 +118,30 @@ Xcode CLT, and the device tools (`mpremote`, `mpy_cross`, `esptool`).
 - [x] Phase 2 — device bridge: ports, device tree, read, upload, run, reset
 - [x] Phase 3 — quick-start (new project wizard) + firmware flash
 - [x] Phase 4 — settings modal, persisted to localStorage
+- [x] Tool bundling — esptool/mpremote/mpy-cross as sidecars + "use my own" override
+- [x] Firmware detection (chip + MicroPython) + guided flash banner
+- [x] Branding (ESPStudio), native macOS menu + About screen, lucide icons, async commands
 
 ### Next step (start here)
 
-**M1 in [VISION.md](./VISION.md): hardware-true core.** All device/flash commands are
-wired but verified by compilation only. Plug in a real ESP32, validate every
-`mpremote`/`esptool` call end-to-end, and fix whatever differs from assumptions before
-building more UI. Then proceed through the M2+ UX milestones in VISION.md.
+**M1 in [VISION.md](./VISION.md): hardware-true core — in progress.** All device/flash
+commands are wired and the bundled tools run, but the end-to-end path is still being
+validated on a real ESP32. Walk port → detect → device tree → upload → run → flash on
+hardware and fix whatever differs from assumptions. Then proceed through M2+ in VISION.md.
 
 ### Not done / known gaps / next ideas
 
-- **No hardware test yet** — see "Next step" above.
-- **Finder PATH**: defaults are bare names (`mpremote`, `esptool`, `python3`). If a
-  packaged app can't find them, set full paths in Settings (e.g. `~/.local/bin/mpremote`).
+- **Hardware validation underway** — see "Next step" above.
+- **Notarization / multi-OS binaries**: the bundling mechanism is in place, but signing +
+  notarizing the sidecars and building the other-OS binaries (CI matrix) is still TODO.
 - No serial REPL/monitor terminal yet (only one-shot command output in the console panel).
 - No file create/rename/delete from the local tree UI (only open + save).
 - `upload_project` mkdir on device ignores "already exists" errors by design.
 - App icons are still the Tauri defaults.
-- Not yet a git repo (the iot parent folder is not a git repo).
 
 ## Why decisions were made
 
 See [DECISIONS.md](./DECISIONS.md) if present, otherwise the "Stack" section above.
-The single most important principle: **wrap the owner's existing CLIs, don't replace
-them** — so anything that works in their terminal works here, and vice versa.
+The single most important principle: **wrap the standard CLIs, don't reimplement device
+tooling** — so anything that works in those tools works here. We now *bundle* pinned
+versions of those CLIs rather than relying on the user's system install.

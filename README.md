@@ -21,9 +21,10 @@ nothing to install.
 - **IDE-like** — browse the project tree, edit with Monaco, **upload the current file
   with one button**, or upload the whole project (with optional `.mpy` cross-compile).
 - **Read the device** — list and open the ESP's filesystem (read-only), in one round-trip.
-- **Flash firmware** — erase + write a MicroPython `.bin` via `esptool`.
-- **Settings** — tool paths, serial baud, flash offset, firmware path, compile toggle —
-  persisted locally.
+- **Detect & flash** — auto-detect the chip and whether MicroPython is installed, then
+  guided-flash a MicroPython `.bin` at the right offset (erase + write via `esptool`).
+- **Settings** — optional tool overrides, serial baud, flash offset, firmware path,
+  compile toggle — persisted locally.
 
 ## Device tools — bundled
 
@@ -42,11 +43,14 @@ Attributions and sources: [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md).
 
 ```bash
 pnpm install
-pnpm tauri dev        # dev window with hot reload
-pnpm tauri build      # production bundle for the current OS
+./scripts/fetch-binaries.sh   # fetch the bundled device tools (once per OS)
+pnpm tauri dev                # dev window with hot reload
+pnpm tauri build              # production bundle for the current OS
 ```
 
-Requires Node, pnpm, and the Rust toolchain (`rustup`).
+The bundled sidecars in `src-tauri/binaries/` are gitignored, so run
+`scripts/fetch-binaries.sh` after cloning (and again to refresh tool versions).
+Requires Node, pnpm, the Rust toolchain (`rustup`), and Python 3 (for the script).
 
 ## Project layout
 
