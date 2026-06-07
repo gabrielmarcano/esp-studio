@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Bundled device-tool sidecars — large, platform-specific, reproducible.
+# Generate locally with: scripts/fetch-binaries.sh
+src-tauri/binaries/
+
+# Machine-local Claude Code settings (shared rules live in .claude/rules/)
+.claude/settings.local.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
