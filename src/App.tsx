@@ -89,6 +89,14 @@ export default function App() {
     };
   }, []);
 
+  // Live esptool output during flashing → stream into the console.
+  useEffect(() => {
+    const un = listen<string>("flash-output", (e) => append(e.payload));
+    return () => {
+      un.then((f) => f());
+    };
+  }, [append]);
+
   // ---- device detection (chip type + MicroPython presence) ----
   const detectNow = useCallback(async (s: Settings): Promise<DeviceInfo | null> => {
     if (!s.port) {

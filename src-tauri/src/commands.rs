@@ -3,10 +3,11 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::Read;
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter};
 
 // ---------- helpers ----------
 
@@ -27,6 +28,72 @@ fn run(program: &str, args: &[&str]) -> Result<String, String> {
             "`{program}` exited with {}\nstdout:\n{stdout}\nstderr:\n{stderr}",
             output.status
         ))
+    }
+}
+
+/// Strip ANSI escape sequences (colour + cursor codes) that tools like esptool
+/// emit even when piped, so the streamed console stays clean.
+fn strip_ansi(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '\u{1b}' {
+            // ESC [ <params> <final byte 0x40..=0x7e> (CSI), else just drop ESC.
+            if i + 1 < chars.len() && chars[i + 1] == '[' {
+                i += 2;
+                while i < chars.len() && !('\u{40}'..='\u{7e}').contains(&chars[i]) {
+                    i += 1;
+                }
+                i += 1; // skip the final byte
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// Run a command, streaming each stdout/stderr line to the frontend as `event`
+/// so long operations (esp. flashing) show live progress instead of going dark.
+/// Returns Ok on success, Err on a non-zero exit.
+fn run_streamed(app: &AppHandle, event: &str, program: &str, args: &[&str]) -> Result<(), String> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to launch `{program}`: {e}"))?;
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    // Read stderr on its own thread so both streams flow concurrently.
+    let app_err = app.clone();
+    let ev_err = event.to_string();
+    let err_handle = std::thread::spawn(move || {
+        if let Some(s) = stderr {
+            for line in BufReader::new(s).lines().map_while(Result::ok) {
+                let _ = app_err.emit(&ev_err, strip_ansi(&line));
+            }
+        }
+    });
+
+    if let Some(s) = stdout {
+        for line in BufReader::new(s).lines().map_while(Result::ok) {
+            let _ = app.emit(event, strip_ansi(&line));
+        }
+    }
+    let _ = err_handle.join();
+
+    let status = child.wait().map_err(|e| format!("wait failed: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("`{program}` exited with {status}"))
     }
 }
 
@@ -614,27 +681,43 @@ pub struct FlashArgs {
 }
 
 #[tauri::command]
-pub async fn flash_firmware(args: FlashArgs) -> Result<String, String> {
+pub async fn flash_firmware(app: AppHandle, args: FlashArgs) -> Result<String, String> {
     let esptool = tool_path(&args.esptool, "esptool");
-    let mut log = String::new();
-    if args.erase {
-        log.push_str(&run(&esptool, &["--port", &args.port, "erase-flash"])?);
-        log.push_str("\n--- erased ---\n");
+    let port = args.port.as_str();
+    let offset = args.offset.as_str();
+    let bin = args.bin_path.as_str();
+    let want_erase = args.erase;
+
+    // One flash attempt. `full_erase` does the power-hungry whole-chip erase
+    // (needs the stub); skipping it still works because write-flash erases the
+    // regions it writes.
+    let attempt = |full_erase: bool, baud: Option<&str>| -> Result<(), String> {
+        if want_erase && full_erase {
+            run_streamed(&app, "flash-output", &esptool, &["--port", port, "erase-flash"])?;
+        }
+        let mut a: Vec<&str> = vec!["--port", port];
+        if let Some(b) = baud {
+            a.push("--baud");
+            a.push(b);
+        }
+        a.extend(["write-flash", "-z", offset, bin]);
+        run_streamed(&app, "flash-output", &esptool, &a)
+    };
+
+    // No-brainer escalation: clean install at the configured (fast) baud first;
+    // on failure retry at the default speed and skip the whole-chip erase, which
+    // is the heaviest current draw and a common cause of brown-outs / "serial
+    // data stream stopped". The user never has to think about baud.
+    if let Err(e) = attempt(true, Some(args.baud.as_str())) {
+        let _ = app.emit(
+            "flash-output",
+            format!(
+                "\n[ESPStudio] flash failed ({e}).\n[ESPStudio] Retrying at default speed without the full-chip erase…\n"
+            ),
+        );
+        attempt(false, None)?;
     }
-    log.push_str(&run(
-        &esptool,
-        &[
-            "--port",
-            &args.port,
-            "--baud",
-            &args.baud,
-            "write-flash",
-            "-z",
-            &args.offset,
-            &args.bin_path,
-        ],
-    )?);
-    Ok(log)
+    Ok(String::new())
 }
 
 // ---------- quick start: new project ----------
