@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import Toggle from "./Toggle";
 import type { Settings } from "../lib/settings";
 
@@ -14,14 +13,6 @@ export default function SettingsModal({ settings, onSave, onClose, onAbout }: Pr
   const [s, setS] = useState<Settings>(settings);
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
     setS((prev) => ({ ...prev, [k]: v }));
-
-  const pickFirmware = async () => {
-    const file = await open({
-      multiple: false,
-      filters: [{ name: "Firmware", extensions: ["bin"] }],
-    });
-    if (typeof file === "string") set("firmwarePath", file);
-  };
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -116,21 +107,6 @@ export default function SettingsModal({ settings, onSave, onClose, onAbout }: Pr
               "If you're unsure, leave this off — plain .py always works."
             }
           />
-        </fieldset>
-
-        <fieldset>
-          <legend>Firmware</legend>
-          <label>
-            Firmware .bin
-            <div className="path-row">
-              <input
-                value={s.firmwarePath}
-                onChange={(e) => set("firmwarePath", e.target.value)}
-                placeholder="path to MicroPython .bin"
-              />
-              <button onClick={pickFirmware}>Browse…</button>
-            </div>
-          </label>
         </fieldset>
 
         <div className="modal-actions">

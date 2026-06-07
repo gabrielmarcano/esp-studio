@@ -13,7 +13,6 @@ export interface Settings {
   autoBaud: boolean; // true = app picks the flash speed (fast, auto-fallback)
   baud: string; // manual flash baud, used only when autoBaud is off
   offset: string; // flash offset: 0x1000 for ESP32, 0x0 for ESP8266/S3/C3
-  firmwarePath: string;
   compileOnUpload: boolean;
   projectDir: string; // currently opened project folder
 }
@@ -27,7 +26,6 @@ const DEFAULTS: Settings = {
   autoBaud: true,
   baud: "460800",
   offset: "0x1000",
-  firmwarePath: "",
   compileOnUpload: true,
   projectDir: "",
 };

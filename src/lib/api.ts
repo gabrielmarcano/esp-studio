@@ -93,12 +93,12 @@ export const uploadProject = (s: Settings) =>
 const AUTO_BAUD = "115200";
 const flashBaud = (s: Settings) => (s.autoBaud ? AUTO_BAUD : s.baud);
 
-export const flashFirmware = (s: Settings, erase: boolean) =>
+export const flashFirmware = (s: Settings, binPath: string, erase: boolean) =>
   invoke<string>("flash_firmware", {
     args: {
       esptool: esp(s),
       port: s.port,
-      bin_path: s.firmwarePath,
+      bin_path: binPath,
       baud: flashBaud(s),
       offset: s.offset,
       erase,

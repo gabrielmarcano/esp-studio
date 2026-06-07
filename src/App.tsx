@@ -257,19 +257,8 @@ export default function App() {
     });
   };
 
-  const handleFlash = () => {
-    if (!settings.firmwarePath) {
-      append("Set a firmware .bin in Settings first.");
-      setShowSettings(true);
-      return;
-    }
-    return withBusy(`flash ${settings.firmwarePath.split("/").pop()}`, () =>
-      api.flashFirmware(settings, true)
-    );
-  };
-
-  // Guided MicroPython install: pick a .bin, flash at the detected chip's
-  // offset (erase first), then re-detect to refresh the banner.
+  // Guided flash (toolbar Flash + the "no MicroPython" banner): pick a .bin,
+  // flash at the detected chip's offset (erase first), then re-detect.
   const flashMicroPython = async () => {
     const file = await open({
       multiple: false,
@@ -277,9 +266,12 @@ export default function App() {
     });
     if (typeof file !== "string") return;
     const offset = deviceInfo?.suggested_offset || settings.offset;
-    const next = { ...settings, firmwarePath: file, offset };
-    persist(next);
-    await withBusy(`flash MicroPython @ ${offset}`, () => api.flashFirmware(next, true));
+    const next = offset !== settings.offset ? { ...settings, offset } : settings;
+    if (next !== settings) persist(next);
+    const name = file.split("/").pop();
+    await withBusy(`flash MicroPython (${name})`, () =>
+      api.flashFirmware(next, file, true)
+    );
     await detectNow(next);
   };
 
@@ -306,7 +298,7 @@ export default function App() {
         }
         onRun={() => runCurrent()}
         onReset={() => withBusy("reset device", () => api.resetDevice(settings))}
-        onFlash={handleFlash}
+        onFlash={() => flashMicroPython()}
         onSettings={() => setShowSettings(true)}
       />
 
