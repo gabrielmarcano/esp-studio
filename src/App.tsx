@@ -32,6 +32,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [refreshingLocal, setRefreshingLocal] = useState(false);
+  const [refreshingDevice, setRefreshingDevice] = useState(false);
 
   const append = useCallback((msg: string) => {
     setLog((l) => l + msg + "\n");
@@ -46,10 +49,13 @@ export default function App() {
   const refreshLocal = useCallback(
     async (dir: string) => {
       if (!dir) return;
+      setRefreshingLocal(true);
       try {
         setLocalTree(await api.readDir(dir));
       } catch (e) {
         append(`Error reading folder: ${e}`);
+      } finally {
+        setRefreshingLocal(false);
       }
     },
     [append]
@@ -61,6 +67,7 @@ export default function App() {
 
   // ---- ports ----
   const refreshPorts = useCallback(async () => {
+    setScanning(true);
     try {
       const p = await api.listPorts(settings);
       setPorts(p);
@@ -73,6 +80,8 @@ export default function App() {
       }
     } catch (e) {
       append(`error listing ports: ${e}`);
+    } finally {
+      setScanning(false);
     }
   }, [settings, persist, append]);
 
@@ -180,10 +189,12 @@ export default function App() {
     }
   };
 
-  const refreshDevice = () =>
-    withBusy("list device files", async () => {
+  const refreshDevice = () => {
+    setRefreshingDevice(true);
+    return withBusy("list device files", async () => {
       setDeviceTree(await api.deviceTree(settings));
-    });
+    }).finally(() => setRefreshingDevice(false));
+  };
 
   const uploadCurrent = () => {
     if (!file || file.readOnly) return;
@@ -258,6 +269,7 @@ export default function App() {
         canUpload={canUpload}
         onPortChange={(port) => persist({ ...settings, port })}
         onRefreshPorts={refreshPorts}
+        scanning={scanning}
         onNewProject={() => setShowNew(true)}
         onOpenFolder={openFolder}
         onSave={saveFile}
@@ -300,7 +312,7 @@ export default function App() {
                 {settings.projectDir ? `: ${settings.projectDir.split("/").pop()}` : ""}
               </span>
               <button className="mini" onClick={() => refreshLocal(settings.projectDir)}>
-                <RefreshCw size={13} />
+                <RefreshCw size={13} className={refreshingLocal ? "spin" : ""} />
               </button>
             </div>
             {settings.projectDir ? (
@@ -314,7 +326,7 @@ export default function App() {
             <div className="sidebar-header">
               <span>DEVICE{settings.port ? `: ${settings.port.split("/").pop()}` : ""}</span>
               <button className="mini" onClick={refreshDevice} disabled={!settings.port}>
-                <RefreshCw size={13} />
+                <RefreshCw size={13} className={refreshingDevice ? "spin" : ""} />
               </button>
             </div>
             <FileTree nodes={deviceTree} onOpen={openDeviceFile} activePath={file?.path} />

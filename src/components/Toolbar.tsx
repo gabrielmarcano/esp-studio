@@ -21,6 +21,7 @@ interface Props {
   canUpload: boolean;
   onPortChange: (p: string) => void;
   onRefreshPorts: () => void;
+  scanning: boolean;
   onNewProject: () => void;
   onOpenFolder: () => void;
   onSave: () => void;
@@ -85,7 +86,7 @@ export default function Toolbar(p: Props) {
         ))}
       </select>
       <button onClick={p.onRefreshPorts} disabled={p.busy} title="Rescan ports">
-        <RefreshCw size={14} />
+        <RefreshCw size={14} className={p.scanning ? "spin" : ""} />
       </button>
       <button onClick={p.onSettings} title="Settings">
         <Settings size={14} />
