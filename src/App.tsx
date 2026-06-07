@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { Download, RefreshCw } from "lucide-react";
+import { Download, Loader, RefreshCw } from "lucide-react";
 import Toolbar from "./components/Toolbar";
 import FileTree from "./components/FileTree";
 import CodeEditor from "./components/Editor";
@@ -37,6 +37,7 @@ export default function App() {
   const [refreshingLocal, setRefreshingLocal] = useState(false);
   const [refreshingDevice, setRefreshingDevice] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [openingFile, setOpeningFile] = useState(false);
 
   const append = useCallback((msg: string) => {
     setLog((l) => l + msg + "\n");
@@ -179,10 +180,12 @@ export default function App() {
 
   const openDeviceFile = async (node: FileNode) => {
     if (node.is_dir) return;
+    setOpeningFile(true);
     await withBusy(`read ${node.path} from device`, async () => {
       const content = await api.deviceRead(settings, node.path);
       setFile({ path: `device:${node.path}`, content, readOnly: true, dirty: false });
     });
+    setOpeningFile(false);
   };
 
   const saveFile = async () => {
@@ -346,13 +349,20 @@ export default function App() {
         </aside>
 
         <main className="main">
-          <CodeEditor
-            path={file?.path}
-            value={file?.content ?? ""}
-            readOnly={file?.readOnly ?? true}
-            dirty={file?.dirty ?? false}
-            onChange={(v) => file && setFile({ ...file, content: v, dirty: true })}
-          />
+          <div className="editor-host">
+            <CodeEditor
+              path={file?.path}
+              value={file?.content ?? ""}
+              readOnly={file?.readOnly ?? true}
+              dirty={file?.dirty ?? false}
+              onChange={(v) => file && setFile({ ...file, content: v, dirty: true })}
+            />
+            {openingFile && (
+              <div className="editor-loading">
+                <Loader size={16} className="spin" /> Reading from device…
+              </div>
+            )}
+          </div>
           <div className="console">
             <div className="console-header">
               <span>OUTPUT</span>
