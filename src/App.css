@@ -1,0 +1,321 @@
+:root {
+  --bg: #1e1e1e;
+  --bg-alt: #252526;
+  --bg-bar: #333333;
+  --border: #3c3c3c;
+  --fg: #cccccc;
+  --fg-dim: #858585;
+  --accent: #0e639c;
+  --accent-hover: #1177bb;
+  --active: #094771;
+  font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* ---- toolbar ---- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.toolbar .brand {
+  font-weight: 600;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.toolbar button,
+.modal button {
+  background: var(--bg-alt);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toolbar button:hover:not(:disabled),
+.modal button:hover:not(:disabled) {
+  background: var(--bg-bar);
+}
+.toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.toolbar select {
+  background: var(--bg-alt);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px;
+  max-width: 240px;
+}
+.toolbar .divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 4px;
+}
+.toolbar .spacer {
+  flex: 1;
+}
+
+/* ---- body ---- */
+.body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 260px;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  background: var(--bg-alt);
+  position: sticky;
+  top: 0;
+}
+.mini {
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  font-size: 12px;
+}
+.mini:hover {
+  color: var(--fg);
+}
+
+/* ---- tree ---- */
+.tree {
+  padding-bottom: 8px;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tree-row:hover {
+  background: var(--bg-bar);
+}
+.tree-row.active {
+  background: var(--active);
+}
+.tree-caret {
+  width: 10px;
+  color: var(--fg-dim);
+}
+.tree-icon {
+  font-size: 12px;
+}
+.tree-empty {
+  padding: 8px 12px;
+  color: var(--fg-dim);
+  font-style: italic;
+}
+
+/* ---- main / editor ---- */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.editor-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.editor-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.editor-placeholder {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-dim);
+}
+.badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg-bar);
+  color: var(--fg-dim);
+}
+.badge.dirty {
+  color: #e2c08d;
+}
+
+/* ---- console ---- */
+.console {
+  height: 180px;
+  border-top: 1px solid var(--border);
+  background: #181818;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.console-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.console-body {
+  flex: 1;
+  margin: 0;
+  padding: 8px 10px;
+  overflow-y: auto;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ---- modals ---- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  width: 520px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.modal h2 {
+  margin: 0 0 16px;
+  font-size: 16px;
+}
+.modal fieldset {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+}
+.modal legend {
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  padding: 0 4px;
+}
+.modal label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+.modal label.checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.modal input,
+.modal select {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.modal input[type="checkbox"] {
+  width: auto;
+}
+.path-row {
+  display: flex;
+  gap: 6px;
+}
+.path-row input {
+  flex: 1;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.modal button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.modal button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.muted {
+  color: var(--fg-dim);
+  font-size: 11px;
+}
+code {
+  background: var(--bg);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
