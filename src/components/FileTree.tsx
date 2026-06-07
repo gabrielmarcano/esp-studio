@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChevronDown, ChevronRight, File, FileCode, Folder } from "lucide-react";
 import type { FileNode } from "../lib/api";
 
 interface Props {
@@ -29,8 +30,12 @@ function TreeNode({
           style={{ paddingLeft: depth * 12 + 8 }}
           onClick={() => setOpen((o) => !o)}
         >
-          <span className="tree-caret">{open ? "▾" : "▸"}</span>
-          <span className="tree-icon">📁</span>
+          <span className="tree-caret">
+            {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+          </span>
+          <span className="tree-icon">
+            <Folder size={13} />
+          </span>
           <span className="tree-name">{node.name}</span>
         </div>
         {open &&
@@ -53,7 +58,9 @@ function TreeNode({
       style={{ paddingLeft: depth * 12 + 22 }}
       onClick={() => onOpen(node)}
     >
-      <span className="tree-icon">{node.name.endsWith(".py") ? "🐍" : "📄"}</span>
+      <span className="tree-icon">
+        {node.name.endsWith(".py") ? <FileCode size={13} /> : <File size={13} />}
+      </span>
       <span className="tree-name">{node.name}</span>
     </div>
   );

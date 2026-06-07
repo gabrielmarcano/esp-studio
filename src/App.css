@@ -36,13 +36,18 @@ body,
 .toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
-  padding: 6px 10px;
+  /* left padding clears the macOS traffic lights (overlay title bar) */
+  padding: 6px 10px 6px 82px;
   background: var(--bg-bar);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .toolbar .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   margin-right: 8px;
   white-space: nowrap;
@@ -56,6 +61,11 @@ body,
   padding: 4px 9px;
   cursor: pointer;
   white-space: nowrap;
+}
+.toolbar button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 .toolbar button:hover:not(:disabled),
 .modal button:hover:not(:disabled) {
@@ -81,6 +91,43 @@ body,
 }
 .toolbar .spacer {
   flex: 1;
+}
+
+/* ---- device status banner ---- */
+.device-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.device-status.warn {
+  color: #e2c08d;
+  background: #3a2f1c;
+}
+.device-status button {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.device-status button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.device-status button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* ---- body ---- */
@@ -117,6 +164,8 @@ body,
   top: 0;
 }
 .mini {
+  display: inline-flex;
+  align-items: center;
   background: none;
   border: none;
   color: var(--fg-dim);
@@ -148,11 +197,16 @@ body,
   background: var(--active);
 }
 .tree-caret {
-  width: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
   color: var(--fg-dim);
 }
 .tree-icon {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-dim);
 }
 .tree-empty {
   padding: 8px 12px;
@@ -277,6 +331,76 @@ body,
   align-items: center;
   gap: 8px;
 }
+
+/* ---- toggle switch (label left, switch right) ---- */
+.toggle-wrap {
+  margin: 8px 0 10px;
+}
+/* `label.toggle` beats the `.modal label` column layout via equal specificity + order */
+label.toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  font-size: 12px;
+  margin: 0;
+}
+.toggle-label {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.info-btn {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.info-btn:hover {
+  color: var(--fg);
+}
+.toggle-help {
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-track {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--border);
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+.toggle input:checked + .toggle-track {
+  background: var(--accent);
+}
+.toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(16px);
+}
+.toggle input:focus-visible + .toggle-track {
+  outline: 2px solid var(--accent-hover);
+  outline-offset: 1px;
+}
 .modal input,
 .modal select {
   background: var(--bg);
@@ -299,8 +423,22 @@ body,
 .modal-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
   margin-top: 8px;
+}
+.modal-actions .link {
+  margin-right: auto;
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 4px 0;
+  font-size: 12px;
+}
+.modal-actions .link:hover {
+  color: var(--fg);
+  text-decoration: underline;
 }
 .modal button.primary {
   background: var(--accent);
@@ -313,6 +451,32 @@ body,
 .muted {
   color: var(--fg-dim);
   font-size: 11px;
+}
+.about-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.about-row span:first-child {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.about-row span:last-child {
+  color: var(--fg-dim);
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  text-align: right;
+  word-break: break-word;
+}
+.modal a.ext {
+  color: var(--accent-hover);
+  cursor: pointer;
+}
+.modal a.ext:hover {
+  text-decoration: underline;
 }
 code {
   background: var(--bg);

@@ -42,7 +42,7 @@ export default function CodeEditor({
       <div className="editor-tab">
         <span>{path.split("/").pop()}</span>
         {readOnly && <span className="badge">device · read-only</span>}
-        {dirty && !readOnly && <span className="badge dirty">● unsaved</span>}
+        {dirty && !readOnly && <span className="badge dirty">unsaved</span>}
       </div>
       <Editor
         height="100%"

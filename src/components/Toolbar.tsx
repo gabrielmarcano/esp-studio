@@ -1,3 +1,16 @@
+import {
+  CircuitBoard,
+  FolderOpen,
+  FolderUp,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Settings,
+  Upload,
+  Zap,
+} from "lucide-react";
 import type { PortInfo } from "../lib/api";
 
 interface Props {
@@ -21,29 +34,43 @@ interface Props {
 
 export default function Toolbar(p: Props) {
   return (
-    <div className="toolbar">
-      <span className="brand">⚡ esp-studio</span>
+    <div className="toolbar" data-tauri-drag-region>
+      <span className="brand" data-tauri-drag-region>
+        <CircuitBoard size={15} /> ESPStudio
+      </span>
 
-      <button onClick={p.onNewProject} disabled={p.busy}>＋ New</button>
-      <button onClick={p.onOpenFolder} disabled={p.busy}>📂 Open</button>
+      <button onClick={p.onNewProject} disabled={p.busy}>
+        <Plus size={14} /> New
+      </button>
+      <button onClick={p.onOpenFolder} disabled={p.busy}>
+        <FolderOpen size={14} /> Open
+      </button>
 
-      <div className="divider" />
+      <div className="divider" data-tauri-drag-region />
 
-      <button onClick={p.onSave} disabled={!p.canSave || p.busy}>💾 Save</button>
+      <button onClick={p.onSave} disabled={!p.canSave || p.busy}>
+        <Save size={14} /> Save
+      </button>
       <button onClick={p.onUpload} disabled={!p.canUpload || p.busy}>
-        ⬆ Upload file
+        <Upload size={14} /> Upload file
       </button>
       <button onClick={p.onUploadProject} disabled={!p.port || p.busy}>
-        ⬆⬆ Upload project
+        <FolderUp size={14} /> Upload project
       </button>
-      <button onClick={p.onRun} disabled={!p.canUpload || p.busy}>▶ Run</button>
-      <button onClick={p.onReset} disabled={!p.port || p.busy}>↻ Reset</button>
+      <button onClick={p.onRun} disabled={!p.canUpload || p.busy}>
+        <Play size={14} /> Run
+      </button>
+      <button onClick={p.onReset} disabled={!p.port || p.busy}>
+        <RotateCcw size={14} /> Reset
+      </button>
 
-      <div className="divider" />
+      <div className="divider" data-tauri-drag-region />
 
-      <button onClick={p.onFlash} disabled={!p.port || p.busy}>⚡ Flash</button>
+      <button onClick={p.onFlash} disabled={!p.port || p.busy}>
+        <Zap size={14} /> Flash
+      </button>
 
-      <div className="spacer" />
+      <div className="spacer" data-tauri-drag-region />
 
       <select
         value={p.port}
@@ -58,9 +85,11 @@ export default function Toolbar(p: Props) {
         ))}
       </select>
       <button onClick={p.onRefreshPorts} disabled={p.busy} title="Rescan ports">
-        ⟳
+        <RefreshCw size={14} />
       </button>
-      <button onClick={p.onSettings} title="Settings">⚙</button>
+      <button onClick={p.onSettings} title="Settings">
+        <Settings size={14} />
+      </button>
     </div>
   );
 }

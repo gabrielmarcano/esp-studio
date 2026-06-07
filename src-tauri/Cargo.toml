@@ -14,6 +14,12 @@ edition = "2021"
 name = "esp_studio_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Binary named for the brand so macOS shows "ESPStudio" in dev too (the package
+# stays `esp-studio`). Matches productName in tauri.conf.json.
+[[bin]]
+name = "ESPStudio"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

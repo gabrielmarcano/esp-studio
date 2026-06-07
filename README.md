@@ -1,4 +1,4 @@
-<h1 align="center">⚡ esp-studio</h1>
+<h1 align="center">ESPStudio</h1>
 <p align="center">A hyper-simplified, cross-platform IDE for MicroPython on ESP32 / ESP8266</p>
 
 <div align="center">
@@ -11,7 +11,8 @@
 
 A small desktop app (macOS · Linux · Windows) that wraps the MicroPython workflow:
 a VSCode-like layout — sidebar file tree, top toolbar, Monaco editor, output console —
-on top of the tools you already use: `mpremote`, `mpy-cross`, and `esptool`.
+with the device tools (`mpremote`, `mpy-cross`, `esptool`) bundled in, so there's
+nothing to install.
 
 ## Features
 
@@ -24,18 +25,18 @@ on top of the tools you already use: `mpremote`, `mpy-cross`, and `esptool`.
 - **Settings** — tool paths, serial baud, flash offset, firmware path, compile toggle —
   persisted locally.
 
-## Requirements
+## Device tools — bundled
 
-These CLIs must be installed (the app shells out to them):
+ESPStudio bundles the device tools it needs as sidecars, so there's nothing to install:
 
-| Tool | Install |
-|---|---|
-| `mpremote` | `pip install mpremote` |
-| `mpy_cross` | `pip install mpy-cross` (only for project compile-on-upload) |
-| `esptool` | `pip install esptool` (only for flashing) |
+| Tool | License | Purpose |
+|---|---|---|
+| `esptool` | GPLv2 | flash MicroPython firmware |
+| `mpremote` | MIT | upload / run / read the device filesystem |
+| `mpy-cross` | MIT | cross-compile `.py` → `.mpy` on project upload |
 
-If the app can't find them (e.g. launched from Finder with a minimal PATH), set their
-**full paths** in Settings (e.g. `~/.local/bin/mpremote`).
+Advanced users can point at their own installs via **Settings → Use my own binaries**.
+Attributions and sources: [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md).
 
 ## Develop
 

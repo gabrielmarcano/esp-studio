@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
+import { Download, RefreshCw } from "lucide-react";
 import Toolbar from "./components/Toolbar";
 import FileTree from "./components/FileTree";
 import CodeEditor from "./components/Editor";
 import SettingsModal from "./components/SettingsModal";
 import NewProjectModal from "./components/NewProjectModal";
+import AboutModal from "./components/AboutModal";
 import * as api from "./lib/api";
-import type { FileNode, PortInfo } from "./lib/api";
+import type { DeviceInfo, FileNode, PortInfo } from "./lib/api";
 import { loadSettings, saveSettings, type Settings } from "./lib/settings";
 import "./App.css";
 
@@ -23,10 +26,12 @@ export default function App() {
   const [localTree, setLocalTree] = useState<FileNode[]>([]);
   const [deviceTree, setDeviceTree] = useState<FileNode[]>([]);
   const [file, setFile] = useState<OpenFile | null>(null);
+  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [busy, setBusy] = useState(false);
-  const [log, setLog] = useState<string>("Welcome to esp-studio.\n");
+  const [log, setLog] = useState<string>("Welcome to ESPStudio.\n");
   const [showSettings, setShowSettings] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
 
   const append = useCallback((msg: string) => {
     setLog((l) => l + msg + "\n");
@@ -59,9 +64,15 @@ export default function App() {
     try {
       const p = await api.listPorts(settings);
       setPorts(p);
-      if (!settings.port && p.length === 1) persist({ ...settings, port: p[0].port });
+      // Auto-select when the current choice is gone (or none yet): prefer an
+      // ESP-likely board, else the first available port.
+      const stillThere = p.some((pt) => pt.port === settings.port);
+      if (!stillThere) {
+        const pick = p.find((pt) => pt.likely_esp) ?? p[0];
+        persist({ ...settings, port: pick?.port ?? "" });
+      }
     } catch (e) {
-      append(`Error listing ports: ${e}`);
+      append(`error listing ports: ${e}`);
     }
   }, [settings, persist, append]);
 
@@ -70,6 +81,47 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Native macOS menu → "About ESPStudio" opens our modal.
+  useEffect(() => {
+    const un = listen("open-about", () => setShowAbout(true));
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
+
+  // ---- device detection (chip type + MicroPython presence) ----
+  const detectNow = useCallback(async (s: Settings): Promise<DeviceInfo | null> => {
+    if (!s.port) {
+      setDeviceInfo(null);
+      return null;
+    }
+    try {
+      const info = await api.detectDevice(s);
+      setDeviceInfo(info);
+      const where = info.chip ?? "device";
+      append(
+        info.micropython
+          ? `detected ${where} · MicroPython ${info.version ?? "?"}`
+          : `detected ${where} · no MicroPython`
+      );
+      return info;
+    } catch (e) {
+      setDeviceInfo(null);
+      append(`device detect failed: ${e}`);
+      return null;
+    }
+  }, [append]);
+
+  // Re-detect whenever the selected port changes; adopt the chip's flash offset.
+  useEffect(() => {
+    detectNow(settings).then((info) => {
+      if (info?.suggested_offset && info.suggested_offset !== settings.offset) {
+        persist({ ...settings, offset: info.suggested_offset });
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.port, detectNow]);
+
   // ---- helpers ----
   const withBusy = async (label: string, fn: () => Promise<string | void>) => {
     setBusy(true);
@@ -77,9 +129,9 @@ export default function App() {
     try {
       const out = await fn();
       if (out) append(out.trim());
-      append(`✓ ${label} done`);
+      append(`${label}: done`);
     } catch (e) {
-      append(`✗ ${e}`);
+      append(`error: ${e}`);
     } finally {
       setBusy(false);
     }
@@ -170,6 +222,21 @@ export default function App() {
     );
   };
 
+  // Guided MicroPython install: pick a .bin, flash at the detected chip's
+  // offset (erase first), then re-detect to refresh the banner.
+  const flashMicroPython = async () => {
+    const file = await open({
+      multiple: false,
+      filters: [{ name: "MicroPython firmware", extensions: ["bin"] }],
+    });
+    if (typeof file !== "string") return;
+    const offset = deviceInfo?.suggested_offset || settings.offset;
+    const next = { ...settings, firmwarePath: file, offset };
+    persist(next);
+    await withBusy(`flash MicroPython @ ${offset}`, () => api.flashFirmware(next, true));
+    await detectNow(next);
+  };
+
   const canSave = !!file && !file.readOnly && file.dirty;
   const canUpload = !!file && !file.readOnly && !!settings.port;
 
@@ -196,6 +263,26 @@ export default function App() {
         onSettings={() => setShowSettings(true)}
       />
 
+      {settings.port && deviceInfo && (
+        <div className={"device-status" + (deviceInfo.micropython ? "" : " warn")}>
+          {deviceInfo.micropython ? (
+            <span>
+              {deviceInfo.chip ?? "Device"} · MicroPython {deviceInfo.version ?? ""}
+            </span>
+          ) : (
+            <>
+              <span>
+                No MicroPython detected
+                {deviceInfo.chip ? ` on ${deviceInfo.chip}` : ""}. Flash it to get started.
+              </span>
+              <button onClick={flashMicroPython} disabled={busy}>
+                <Download size={13} /> Flash MicroPython…
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <div className="body">
         <aside className="sidebar">
           <div className="sidebar-section">
@@ -205,7 +292,7 @@ export default function App() {
                 {settings.projectDir ? `: ${settings.projectDir.split("/").pop()}` : ""}
               </span>
               <button className="mini" onClick={() => refreshLocal(settings.projectDir)}>
-                ⟳
+                <RefreshCw size={13} />
               </button>
             </div>
             {settings.projectDir ? (
@@ -219,7 +306,7 @@ export default function App() {
             <div className="sidebar-header">
               <span>DEVICE{settings.port ? `: ${settings.port.split("/").pop()}` : ""}</span>
               <button className="mini" onClick={refreshDevice} disabled={!settings.port}>
-                ⟳
+                <RefreshCw size={13} />
               </button>
             </div>
             <FileTree nodes={deviceTree} onOpen={openDeviceFile} activePath={file?.path} />
@@ -254,6 +341,10 @@ export default function App() {
             setShowSettings(false);
           }}
           onClose={() => setShowSettings(false)}
+          onAbout={() => {
+            setShowSettings(false);
+            setShowAbout(true);
+          }}
         />
       )}
       {showNew && (
@@ -262,6 +353,9 @@ export default function App() {
           onCreate={handleCreate}
           onClose={() => setShowNew(false)}
         />
+      )}
+      {showAbout && (
+        <AboutModal settings={settings} onClose={() => setShowAbout(false)} />
       )}
     </div>
   );
