@@ -87,10 +87,11 @@ export const uploadProject = (s: Settings) =>
   });
 
 // ---- firmware ----
-// App-managed mode flashes fast and the Rust side auto-falls-back to default
-// speed on failure; manual mode uses the user's configured baud.
-const FAST_BAUD = "460800";
-const flashBaud = (s: Settings) => (s.autoBaud ? FAST_BAUD : s.baud);
+// App-managed mode prioritizes reliability over speed: 115200 is esptool's
+// default baud and works on essentially every board/cable (higher rates can
+// crash esptool's flash-id step on some setups). Power users can override.
+const AUTO_BAUD = "115200";
+const flashBaud = (s: Settings) => (s.autoBaud ? AUTO_BAUD : s.baud);
 
 export const flashFirmware = (s: Settings, erase: boolean) =>
   invoke<string>("flash_firmware", {
