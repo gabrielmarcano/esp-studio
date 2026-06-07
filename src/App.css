@@ -282,6 +282,10 @@ body,
   text-transform: uppercase;
   border-bottom: 1px solid var(--border);
 }
+.console-actions {
+  display: flex;
+  gap: 12px;
+}
 .console-body {
   flex: 1;
   margin: 0;

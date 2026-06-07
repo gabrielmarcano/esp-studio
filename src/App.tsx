@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Download, RefreshCw } from "lucide-react";
 import Toolbar from "./components/Toolbar";
 import FileTree from "./components/FileTree";
@@ -35,10 +36,21 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [refreshingLocal, setRefreshingLocal] = useState(false);
   const [refreshingDevice, setRefreshingDevice] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const append = useCallback((msg: string) => {
     setLog((l) => l + msg + "\n");
   }, []);
+
+  const copyLog = useCallback(async () => {
+    try {
+      await writeText(log);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      append(`copy failed: ${e}`);
+    }
+  }, [log, append]);
 
   const persist = useCallback((s: Settings) => {
     setSettings(s);
@@ -344,9 +356,14 @@ export default function App() {
           <div className="console">
             <div className="console-header">
               <span>OUTPUT</span>
-              <button className="mini" onClick={() => setLog("")}>
-                clear
-              </button>
+              <div className="console-actions">
+                <button className="mini" onClick={copyLog}>
+                  {copied ? "copied" : "copy"}
+                </button>
+                <button className="mini" onClick={() => setLog("")}>
+                  clear
+                </button>
+              </div>
             </div>
             <pre className="console-body">{log}</pre>
           </div>
