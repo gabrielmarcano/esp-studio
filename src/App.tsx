@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -38,6 +38,18 @@ export default function App() {
   const [refreshingDevice, setRefreshingDevice] = useState(false);
   const [copied, setCopied] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
+
+  // Console auto-scroll: stick to the bottom unless the user scrolled up.
+  const consoleRef = useRef<HTMLPreElement>(null);
+  const stick = useRef(true);
+  const onConsoleScroll = () => {
+    const el = consoleRef.current;
+    if (el) stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+  };
+  useEffect(() => {
+    const el = consoleRef.current;
+    if (el && stick.current) el.scrollTop = el.scrollHeight;
+  }, [log]);
 
   const append = useCallback((msg: string) => {
     setLog((l) => l + msg + "\n");
@@ -375,7 +387,9 @@ export default function App() {
                 </button>
               </div>
             </div>
-            <pre className="console-body">{log}</pre>
+            <pre className="console-body" ref={consoleRef} onScroll={onConsoleScroll}>
+              {log}
+            </pre>
           </div>
         </main>
       </div>
