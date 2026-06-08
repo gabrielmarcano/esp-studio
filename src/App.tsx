@@ -42,6 +42,7 @@ export default function App() {
   const [activePath, setActivePath] = useState<string | null>(null);
   const [conn, setConn] = useState<Conn>({ kind: "none" });
   const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string>("Welcome to ESPStudio.\n");
   const [showSettings, setShowSettings] = useState(false);
@@ -315,15 +316,19 @@ export default function App() {
   // ---- helpers ----
   const withBusy = async (label: string, fn: () => Promise<string | void>) => {
     setBusy(true);
-    append(`\n$ ${label}`);
+    setBusyLabel(label);
+    append(`\n${label}…`);
     try {
       const out = await fn();
-      if (out) append(out.trim());
-      append(`${label}: done`);
+      const trimmed = out?.trim();
+      // Result on its own line; don't repeat the label (the status bar already
+      // carried the in-progress phrase). Show the output indented if there was any.
+      append(trimmed ? trimmed.replace(/^/gm, "  ") + "\n  done" : "  done");
     } catch (e) {
-      append(`error: ${e}`);
+      append(`  failed: ${e}`);
     } finally {
       setBusy(false);
+      setBusyLabel(null);
     }
   };
 
@@ -360,7 +365,7 @@ export default function App() {
     }
     // Readable but not prefetched (over size cap) → lazy serial read.
     setOpeningFile(true);
-    await withBusy(`read ${node.path} from device`, async () => {
+    await withBusy(`Reading ${node.path.split("/").pop()} from device`, async () => {
       const content = await api.deviceRead(settings, node.path);
       openTab({ path, content, readOnly: true, dirty: false });
     });
@@ -370,7 +375,7 @@ export default function App() {
   const saveFile = async () => {
     if (!active || active.readOnly) return;
     const path = active.path;
-    await withBusy(`save ${path}`, async () => {
+    await withBusy(`Saving ${path.split("/").pop()}`, async () => {
       await api.writeFile(path, active.content);
       setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, dirty: false } : t)));
     });
@@ -391,7 +396,7 @@ export default function App() {
   const uploadCurrent = () => {
     if (!active || active.readOnly) return;
     const path = active.path;
-    return withBusy(`upload ${path.split("/").pop()}`, async () => {
+    return withBusy(`Uploading ${path.split("/").pop()} to device`, async () => {
       if (active.dirty) {
         await api.writeFile(path, active.content);
         setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, dirty: false } : t)));
@@ -420,6 +425,20 @@ export default function App() {
 
   const stopRun = () => api.runStop().catch(() => {});
 
+  // Reset is two visible phases: send the reset, then reflect the reboot window.
+  // We deliberately DON'T reconnect to "verify" afterwards — talking to the board
+  // over its single serial line drops into the raw REPL, which would interrupt
+  // the program the reset just started (and stop the LED). The connection info
+  // we already hold is still valid (same port/chip), and the serial monitor
+  // shows the real boot output, so the truth is visible without disturbing it.
+  const resetDevice = async () => {
+    await withBusy("Resetting device", () => api.resetDevice(settings));
+    await withBusy(
+      "Rebooting device",
+      () => new Promise<void>((r) => setTimeout(r, 2000))
+    );
+  };
+
   const handleCreate = async (args: {
     parent: string;
     name: string;
@@ -427,7 +446,7 @@ export default function App() {
     git: boolean;
   }) => {
     setShowNew(false);
-    await withBusy(`create project ${args.name}`, async () => {
+    await withBusy(`Creating project ${args.name}`, async () => {
       const path = await api.newProject(args);
       persist({ ...settings, projectDir: path });
       return `created at ${path}`;
@@ -443,7 +462,7 @@ export default function App() {
     });
     if (typeof picked !== "string") return;
     const name = picked.split("/").pop();
-    await withBusy(`flash MicroPython (${name})`, () =>
+    await withBusy(`Flashing MicroPython (${name})`, () =>
       api.flashFirmware(settings, picked, true)
     );
     await attach(settings);
@@ -468,12 +487,14 @@ export default function App() {
         onSave={saveFile}
         onUpload={() => uploadCurrent()}
         onUploadProject={() =>
-          withBusy("upload project", () => api.uploadProject(settings).then(refreshDevice))
+          withBusy("Uploading project to device", () =>
+            api.uploadProject(settings).then(refreshDevice)
+          )
         }
         onRun={() => runCurrent()}
         onStop={stopRun}
         running={running}
-        onReset={() => withBusy("reset device", () => api.resetDevice(settings))}
+        onReset={() => resetDevice()}
         onFlash={() => flashMicroPython()}
         onSettings={() => setShowSettings(true)}
       />
@@ -689,6 +710,7 @@ export default function App() {
 
       <StatusBar
         conn={conn}
+        activity={busyLabel}
         file={
           active
             ? {

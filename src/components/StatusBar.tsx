@@ -14,15 +14,26 @@ const short = (p: string) => p.split("/").pop();
 
 interface Props {
   conn: Conn;
+  // A device action currently in flight (reset/upload/run/flash). When set it
+  // takes over the status text so the user gets feedback without watching the
+  // serial monitor or the LED.
+  activity: string | null;
   file: { name: string; dirty: boolean; readOnly: boolean } | null;
   cursor: { line: number; col: number } | null;
 }
 
-export default function StatusBar({ conn, file, cursor }: Props) {
+export default function StatusBar({ conn, activity, file, cursor }: Props) {
   let dot = "idle";
   let text: ReactNode = "No device";
 
-  if (conn.kind === "connecting") {
+  if (activity) {
+    dot = "busy";
+    text = (
+      <>
+        <Loader size={12} className="spin" /> {activity}…
+      </>
+    );
+  } else if (conn.kind === "connecting") {
     dot = "busy";
     text = (
       <>
