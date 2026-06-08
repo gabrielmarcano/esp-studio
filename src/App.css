@@ -36,7 +36,7 @@ body,
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: 100%;
   background: var(--bg);
   color: var(--fg);
 }
@@ -137,6 +137,42 @@ body,
 .device-status button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ---- status bar ---- */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 0 12px;
+  font-size: 11px;
+  line-height: 1;
+  background: var(--bg-bar);
+  border-top: 1px solid var(--border);
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+.status-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6e7681;
+  flex-shrink: 0;
+}
+.status-dot.ok {
+  background: #3fb950;
+}
+.status-dot.warn {
+  background: #e2c08d;
+}
+.status-dot.busy {
+  background: #58a6ff;
 }
 
 /* ---- body ---- */

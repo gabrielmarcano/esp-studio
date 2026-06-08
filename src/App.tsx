@@ -9,8 +9,9 @@ import CodeEditor from "./components/Editor";
 import SettingsModal from "./components/SettingsModal";
 import NewProjectModal from "./components/NewProjectModal";
 import AboutModal from "./components/AboutModal";
+import StatusBar, { type Conn } from "./components/StatusBar";
 import * as api from "./lib/api";
-import type { DeviceInfo, FileNode, PortInfo } from "./lib/api";
+import type { FileNode, PortInfo } from "./lib/api";
 import { loadSettings, saveSettings, type Settings } from "./lib/settings";
 import "./App.css";
 
@@ -27,7 +28,7 @@ export default function App() {
   const [localTree, setLocalTree] = useState<FileNode[]>([]);
   const [deviceTree, setDeviceTree] = useState<FileNode[]>([]);
   const [file, setFile] = useState<OpenFile | null>(null);
-  const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
+  const [conn, setConn] = useState<Conn>({ kind: "none" });
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string>("Welcome to ESPStudio.\n");
   const [showSettings, setShowSettings] = useState(false);
@@ -35,7 +36,6 @@ export default function App() {
   const [showAbout, setShowAbout] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [refreshingLocal, setRefreshingLocal] = useState(false);
-  const [refreshingDevice, setRefreshingDevice] = useState(false);
   const [copied, setCopied] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
 
@@ -90,30 +90,17 @@ export default function App() {
     if (settings.projectDir) refreshLocal(settings.projectDir);
   }, [settings.projectDir, refreshLocal]);
 
-  // ---- ports ----
+  // ---- ports ---- (manual dropdown refresh; reconcile owns selection/attach)
   const refreshPorts = useCallback(async () => {
     setScanning(true);
     try {
-      const p = await api.listPorts(settings);
-      setPorts(p);
-      // Auto-select when the current choice is gone (or none yet): prefer an
-      // ESP-likely board, else the first available port.
-      const stillThere = p.some((pt) => pt.port === settings.port);
-      if (!stillThere) {
-        const pick = p.find((pt) => pt.likely_esp) ?? p[0];
-        persist({ ...settings, port: pick?.port ?? "" });
-      }
+      setPorts(await api.listPorts(settings));
     } catch (e) {
       append(`error listing ports: ${e}`);
     } finally {
       setScanning(false);
     }
-  }, [settings, persist, append]);
-
-  useEffect(() => {
-    refreshPorts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [settings, append]);
 
   // Native macOS menu → "About ESPStudio" opens our modal.
   useEffect(() => {
@@ -131,89 +118,96 @@ export default function App() {
     };
   }, [append]);
 
-  // ---- device detection (chip type + MicroPython presence) ----
-  const detectNow = useCallback(async (s: Settings): Promise<DeviceInfo | null> => {
-    if (!s.port) {
-      setDeviceInfo(null);
-      return null;
-    }
-    try {
-      const info = await api.detectDevice(s);
-      setDeviceInfo(info);
-      const where = info.chip ?? "device";
-      append(
-        info.micropython
-          ? `detected ${where} · MicroPython ${info.version ?? "?"}`
-          : `detected ${where} · no MicroPython`
-      );
-      return info;
-    } catch (e) {
-      setDeviceInfo(null);
-      append(`device detect failed: ${e}`);
-      return null;
-    }
-  }, [append]);
+  // ---- device connection lifecycle ----
+  const treeCache = useRef<Record<string, FileNode[]>>({});
+  const attachedPort = useRef<string>("");
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
-  // Re-detect whenever the selected port changes; adopt the chip's flash offset
-  // and auto-snapshot the device filesystem once MicroPython is confirmed.
-  useEffect(() => {
-    detectNow(settings).then((info) => {
-      if (info?.suggested_offset && info.suggested_offset !== settings.offset) {
-        persist({ ...settings, offset: info.suggested_offset });
+  // Connect: ONE connect_device call (detection + filesystem snapshot). Shows a
+  // cached tree instantly on reconnect, then refreshes. Drives the conn state.
+  const attach = useCallback(
+    async (s: Settings) => {
+      const port = s.port;
+      if (!port) {
+        setConn({ kind: "none" });
+        setDeviceTree([]);
+        return;
       }
-      if (info?.micropython) {
-        refreshDevice();
-      } else if (info) {
-        // confirmed no MicroPython → no device fs to show
+      setConn({ kind: "connecting", port }); // immediate feedback
+      const cached = treeCache.current[port];
+      if (cached) setDeviceTree(cached); // instant reconnect view
+      try {
+        const st = await api.connectDevice(s);
+        if (st.suggested_offset && st.suggested_offset !== settingsRef.current.offset) {
+          persist({ ...settingsRef.current, offset: st.suggested_offset });
+        }
+        if (st.micropython) {
+          const tree = api.parseTree(st.tree);
+          treeCache.current[port] = tree;
+          setDeviceTree(tree);
+          setConn({ kind: "ready", port, chip: st.chip, version: st.version });
+        } else {
+          setDeviceTree([]);
+          setConn({ kind: "no-mp", port, chip: st.chip });
+        }
+      } catch (e) {
+        setConn({ kind: "error", port, msg: String(e) });
+        append(`connect failed: ${e}`);
+      }
+    },
+    [persist, append]
+  );
+
+  // Presence-driven reconcile: attach to the selected board when it's present,
+  // detach when it's gone, auto-pick a present board when none is selected.
+  const reconcile = useCallback(
+    async (paths: string[]) => {
+      const s = settingsRef.current;
+      const cur = s.port;
+      if (cur && paths.includes(cur)) {
+        if (attachedPort.current !== cur) {
+          attachedPort.current = cur;
+          await attach(s);
+        }
+        return;
+      }
+      if (attachedPort.current) {
+        attachedPort.current = "";
+        setConn({ kind: "none" });
         setDeviceTree([]);
       }
-      // info === null (probe failed/contended) → keep the current tree
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.port, detectNow]);
+      if (paths.length) {
+        const p = await api.listPorts(s).catch(() => [] as PortInfo[]);
+        const pick = p.find((pt) => pt.likely_esp) ?? p[0];
+        if (pick) {
+          attachedPort.current = pick.port;
+          persist({ ...s, port: pick.port });
+          await attach({ ...s, port: pick.port });
+        }
+      }
+    },
+    [attach, persist]
+  );
 
-  // Hotplug: cheaply poll /dev for serial-device changes (no mpremote), and on
-  // a plug/unplug refresh the port list and (re)attach to the board.
+  // Hotplug: poll /dev cheaply (no mpremote). On a device-set change refresh the
+  // port dropdown; every tick reconcile attaches/detaches as devices come/go.
   useEffect(() => {
-    let baseline: string | null = null;
+    let lastKey = "";
     const tick = async () => {
       const paths = await api.listSerialPaths().catch(() => null);
       if (!paths) return;
       const key = paths.join(",");
-      if (baseline === null) {
-        baseline = key; // first run: establish baseline, don't act
-        return;
+      if (key !== lastKey) {
+        lastKey = key;
+        api.listPorts(settingsRef.current).then(setPorts).catch(() => {});
       }
-      if (key === baseline) return;
-      baseline = key;
-      try {
-        const p = await api.listPorts(settings);
-        setPorts(p);
-        const cur = settings.port;
-        const present = !!cur && p.some((pt) => pt.port === cur);
-        if (!present) {
-          const pick = p.find((pt) => pt.likely_esp) ?? p[0];
-          if (pick) {
-            persist({ ...settings, port: pick.port }); // → detect effect attaches
-          } else {
-            setDeviceInfo(null);
-            setDeviceTree([]);
-          }
-        } else {
-          // remembered port (re)appeared, selection unchanged → attach now
-          const info = await detectNow(settings);
-          if (info?.micropython) refreshDevice();
-          else if (info) setDeviceTree([]);
-        }
-      } catch (e) {
-        append(`port poll: ${e}`);
-      }
+      await reconcile(paths);
     };
-    const id = setInterval(tick, 3000);
     tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.port]);
+  }, [reconcile]);
 
   // ---- helpers ----
   const withBusy = async (label: string, fn: () => Promise<string | void>) => {
@@ -277,12 +271,7 @@ export default function App() {
     }
   };
 
-  const refreshDevice = () => {
-    setRefreshingDevice(true);
-    return withBusy("list device files", async () => {
-      setDeviceTree(await api.deviceTree(settings));
-    }).finally(() => setRefreshingDevice(false));
-  };
+  const refreshDevice = () => attach(settings);
 
   const uploadCurrent = () => {
     if (!file || file.readOnly) return;
@@ -319,21 +308,18 @@ export default function App() {
   };
 
   // Guided flash (toolbar Flash + the "no MicroPython" banner): pick a .bin,
-  // flash at the detected chip's offset (erase first), then re-detect.
+  // flash at the detected chip's offset (erase first), then re-attach.
   const flashMicroPython = async () => {
-    const file = await open({
+    const picked = await open({
       multiple: false,
       filters: [{ name: "MicroPython firmware", extensions: ["bin"] }],
     });
-    if (typeof file !== "string") return;
-    const offset = deviceInfo?.suggested_offset || settings.offset;
-    const next = offset !== settings.offset ? { ...settings, offset } : settings;
-    if (next !== settings) persist(next);
-    const name = file.split("/").pop();
+    if (typeof picked !== "string") return;
+    const name = picked.split("/").pop();
     await withBusy(`flash MicroPython (${name})`, () =>
-      api.flashFirmware(next, file, true)
+      api.flashFirmware(settings, picked, true)
     );
-    await detectNow(next);
+    await attach(settings);
   };
 
   const canSave = !!file && !file.readOnly && file.dirty;
@@ -363,23 +349,14 @@ export default function App() {
         onSettings={() => setShowSettings(true)}
       />
 
-      {settings.port && deviceInfo && (
-        <div className={"device-status" + (deviceInfo.micropython ? "" : " warn")}>
-          {deviceInfo.micropython ? (
-            <span>
-              {deviceInfo.chip ?? "Device"} · MicroPython {deviceInfo.version ?? ""}
-            </span>
-          ) : (
-            <>
-              <span>
-                No MicroPython detected
-                {deviceInfo.chip ? ` on ${deviceInfo.chip}` : ""}. Flash it to get started.
-              </span>
-              <button onClick={flashMicroPython} disabled={busy}>
-                <Download size={13} /> Flash MicroPython…
-              </button>
-            </>
-          )}
+      {conn.kind === "no-mp" && (
+        <div className="device-status warn">
+          <span>
+            No MicroPython on {conn.chip ?? "this device"}. Flash it to get started.
+          </span>
+          <button onClick={flashMicroPython} disabled={busy}>
+            <Download size={13} /> Flash MicroPython…
+          </button>
         </div>
       )}
 
@@ -404,9 +381,16 @@ export default function App() {
 
           <div className="sidebar-section">
             <div className="sidebar-header">
-              <span>DEVICE{settings.port ? `: ${settings.port.split("/").pop()}` : ""}</span>
+              <span>
+                DEVICE
+                {conn.kind === "connecting"
+                  ? " — connecting…"
+                  : settings.port
+                  ? `: ${settings.port.split("/").pop()}`
+                  : ""}
+              </span>
               <button className="mini" onClick={refreshDevice} disabled={!settings.port}>
-                <RefreshCw size={13} className={refreshingDevice ? "spin" : ""} />
+                <RefreshCw size={13} className={conn.kind === "connecting" ? "spin" : ""} />
               </button>
             </div>
             <FileTree nodes={deviceTree} onOpen={openDeviceFile} activePath={file?.path} />
@@ -448,6 +432,8 @@ export default function App() {
           </div>
         </main>
       </div>
+
+      <StatusBar conn={conn} />
 
       {showSettings && (
         <SettingsModal
