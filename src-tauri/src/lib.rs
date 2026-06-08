@@ -11,6 +11,7 @@ pub fn run() {
             commands::read_dir,
             commands::read_file,
             commands::write_file,
+            commands::list_serial_paths,
             commands::list_ports,
             commands::device_tree,
             commands::device_read,

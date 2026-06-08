@@ -51,6 +51,9 @@ export const writeFile = (path: string, content: string) =>
   invoke<void>("write_file", { path, content });
 
 // ---- device (all serialized via the queue above) ----
+// Cheap, non-serial: list candidate serial device paths from /dev (no port open).
+export const listSerialPaths = () => invoke<string[]>("list_serial_paths");
+
 export const listPorts = (s: Settings) =>
   serial(() => invoke<PortInfo[]>("list_ports", { mpremote: mp(s) }));
 

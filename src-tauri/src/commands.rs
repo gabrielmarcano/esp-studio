@@ -321,6 +321,30 @@ fn parse_port_line(line: &str) -> Option<PortInfo> {
     })
 }
 
+/// Cheap serial-device presence check (no mpremote): list candidate serial
+/// device paths from /dev. Used to poll for plug/unplug without spawning a tool.
+#[tauri::command]
+pub async fn list_serial_paths() -> Vec<String> {
+    let mut out = vec![];
+    if let Ok(rd) = fs::read_dir("/dev") {
+        for e in rd.flatten() {
+            let name = e.file_name().to_string_lossy().to_string();
+            let n = name.to_lowercase();
+            let hit = n.starts_with("cu.usbserial")
+                || n.starts_with("cu.slab")
+                || n.starts_with("cu.wchusbserial")
+                || n.starts_with("cu.usbmodem")
+                || n.starts_with("ttyusb")
+                || n.starts_with("ttyacm");
+            if hit {
+                out.push(format!("/dev/{name}"));
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
 /// `mpremote connect list` → USB-serial ports only, ESP-likely boards first.
 #[tauri::command]
 pub async fn list_ports(mpremote: String) -> Result<Vec<PortInfo>, String> {

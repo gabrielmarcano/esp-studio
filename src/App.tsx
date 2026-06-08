@@ -154,15 +154,66 @@ export default function App() {
     }
   }, [append]);
 
-  // Re-detect whenever the selected port changes; adopt the chip's flash offset.
+  // Re-detect whenever the selected port changes; adopt the chip's flash offset
+  // and auto-snapshot the device filesystem once MicroPython is confirmed.
   useEffect(() => {
     detectNow(settings).then((info) => {
       if (info?.suggested_offset && info.suggested_offset !== settings.offset) {
         persist({ ...settings, offset: info.suggested_offset });
       }
+      if (info?.micropython) {
+        refreshDevice();
+      } else if (info) {
+        // confirmed no MicroPython → no device fs to show
+        setDeviceTree([]);
+      }
+      // info === null (probe failed/contended) → keep the current tree
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.port, detectNow]);
+
+  // Hotplug: cheaply poll /dev for serial-device changes (no mpremote), and on
+  // a plug/unplug refresh the port list and (re)attach to the board.
+  useEffect(() => {
+    let baseline: string | null = null;
+    const tick = async () => {
+      const paths = await api.listSerialPaths().catch(() => null);
+      if (!paths) return;
+      const key = paths.join(",");
+      if (baseline === null) {
+        baseline = key; // first run: establish baseline, don't act
+        return;
+      }
+      if (key === baseline) return;
+      baseline = key;
+      try {
+        const p = await api.listPorts(settings);
+        setPorts(p);
+        const cur = settings.port;
+        const present = !!cur && p.some((pt) => pt.port === cur);
+        if (!present) {
+          const pick = p.find((pt) => pt.likely_esp) ?? p[0];
+          if (pick) {
+            persist({ ...settings, port: pick.port }); // → detect effect attaches
+          } else {
+            setDeviceInfo(null);
+            setDeviceTree([]);
+          }
+        } else {
+          // remembered port (re)appeared, selection unchanged → attach now
+          const info = await detectNow(settings);
+          if (info?.micropython) refreshDevice();
+          else if (info) setDeviceTree([]);
+        }
+      } catch (e) {
+        append(`port poll: ${e}`);
+      }
+    };
+    const id = setInterval(tick, 3000);
+    tick();
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.port]);
 
   // ---- helpers ----
   const withBusy = async (label: string, fn: () => Promise<string | void>) => {
