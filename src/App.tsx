@@ -420,7 +420,9 @@ export default function App() {
               value={file?.content ?? ""}
               readOnly={file?.readOnly ?? true}
               dirty={file?.dirty ?? false}
-              onChange={(v) => file && setFile({ ...file, content: v, dirty: true })}
+              onChange={(v) =>
+                file && !file.readOnly && setFile({ ...file, content: v, dirty: true })
+              }
             />
             {openingFile && (
               <div className="editor-loading">

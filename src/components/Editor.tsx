@@ -45,10 +45,12 @@ export default function CodeEditor({
         {dirty && !readOnly && <span className="badge dirty">unsaved</span>}
       </div>
       <Editor
+        // Remount per file (key) instead of Monaco's multi-model `path`, which
+        // fires onChange mid-swap and snaps back to the previous file.
+        key={path}
         height="100%"
         theme="vs-dark"
         language={languageFor(path)}
-        path={path}
         value={value}
         onChange={(v) => onChange(v ?? "")}
         options={{
