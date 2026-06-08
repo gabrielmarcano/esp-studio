@@ -44,13 +44,15 @@ export default function CodeEditor({
     const ed = edRef.current;
     const mon = monRef.current;
     if (!ed || !mon || !activePath) return;
-    let model = models.current.get(activePath);
-    if (!model) {
-      const p = activePath;
+    const p = activePath;
+    let model = models.current.get(p);
+    if (!model || model.isDisposed()) {
       const uri = mon.Uri.parse("inmemory://model/" + encodeURIComponent(p));
-      model = mon.editor.createModel(value, languageFor(p), uri);
-      model.onDidChangeContent(() => cb.current.onChange(p, model!.getValue()));
-      models.current.set(p, model);
+      // Reuse a surviving model with the same URI, else make a fresh one.
+      model = mon.editor.getModel(uri) ?? mon.editor.createModel(value, languageFor(p), uri);
+      const m = model;
+      m.onDidChangeContent(() => cb.current.onChange(p, m.getValue()));
+      models.current.set(p, m);
     }
     if (ed.getModel() !== model) ed.setModel(model);
     ed.updateOptions({ readOnly });
@@ -58,7 +60,16 @@ export default function CodeEditor({
 
   const handleMount: OnMount = (ed, mon) => {
     edRef.current = ed;
-    mon && (monRef.current = mon);
+    monRef.current = mon;
+    // The editor is disposed whenever this component's <Editor> unmounts (e.g.
+    // when no file is open). Clear the refs so a later showActive() doesn't call
+    // into a dead instance before the next editor finishes mounting.
+    ed.onDidDispose(() => {
+      if (edRef.current === ed) {
+        edRef.current = null;
+        monRef.current = null;
+      }
+    });
     ed.onDidChangeCursorPosition((e) =>
       cb.current.onCursor?.(e.position.lineNumber, e.position.column)
     );
