@@ -98,6 +98,11 @@ the work is UX-led, in shippable milestones. Reorder freely as priorities shift.
 - App icon + branding.
 
 ### Later / maybe
+- **AI integration** — assist building the MicroPython project code with LLMs
+  (the owner's primary intended workflow; a near-term interest, big feature).
+- **Resizable panels** — drag the sidebar / bottom panel and remember sizes.
+  Deferred from M2: the first attempt didn't work and a fixed comfortable sidebar
+  matters more; revisit with a working drag + a "reset sizes" affordance.
 - Per-project config file committed to the repo (board, offset, baud) so settings travel.
 - Multiple-board awareness; remember last device per project.
 - OTA/WebREPL upload path (the owner already uses WebREPL).
