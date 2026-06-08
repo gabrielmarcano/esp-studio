@@ -68,6 +68,8 @@ the work is UX-led, in shippable milestones. Reorder freely as priorities shift.
 
 ### M2 — Editor tabs + layout shell
 - Multi-file tabs (local + read-only `device:` tabs), dirty markers, close/reorder.
+  Use a persistent Monaco instance with a model per tab (not the current
+  remount-per-file) — this also removes the brief "Loading…" flash on file switch.
 - Dockable/collapsible tool windows with a left + bottom stripe (AS-style).
 - Persistent status bar (connection, board, firmware, cursor, save state).
 - Resizable panels (drag the sidebar / bottom panel; remember sizes).
