@@ -48,6 +48,8 @@ export default function CodeEditor({
         // Remount per file (key) instead of Monaco's multi-model `path`, which
         // fires onChange mid-swap and snaps back to the previous file.
         key={path}
+        // suppress Monaco's default "Loading…" text during the per-file remount
+        loading={null}
         height="100%"
         theme="vs-dark"
         language={languageFor(path)}
