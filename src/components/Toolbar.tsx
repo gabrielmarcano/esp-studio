@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Save,
   Settings,
+  Square,
   Upload,
   Zap,
 } from "lucide-react";
@@ -28,6 +29,8 @@ interface Props {
   onUpload: () => void;
   onUploadProject: () => void;
   onRun: () => void;
+  onStop: () => void;
+  running: boolean;
   onReset: () => void;
   onFlash: () => void;
   onSettings: () => void;
@@ -58,9 +61,15 @@ export default function Toolbar(p: Props) {
       <button onClick={p.onUploadProject} disabled={!p.port || p.busy}>
         <FolderUp size={14} /> Upload project
       </button>
-      <button onClick={p.onRun} disabled={!p.canUpload || p.busy}>
-        <Play size={14} /> Run
-      </button>
+      {p.running ? (
+        <button className="stop" onClick={p.onStop}>
+          <Square size={14} /> Stop
+        </button>
+      ) : (
+        <button onClick={p.onRun} disabled={!p.canUpload || p.busy}>
+          <Play size={14} /> Run
+        </button>
+      )}
       <button onClick={p.onReset} disabled={!p.port || p.busy}>
         <RotateCcw size={14} /> Reset
       </button>

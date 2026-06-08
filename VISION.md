@@ -74,11 +74,13 @@ the work is UX-led, in shippable milestones. Reorder freely as priorities shift.
 - Persistent status bar (connection, board, firmware, cursor, save state).
 - Resizable panels (drag the sidebar / bottom panel; remember sizes).
 
-### M3 — Serial Monitor / REPL (the "Logcat")
-- Live streaming serial output panel (background read loop from the device).
-- Send-line input → interactive REPL; clear/scroll-lock/timestamp toggles.
-- "Run" wires its output here instead of the one-shot console.
-- *(Needs a streaming channel from Rust → frontend; Tauri events. Notable new infra.)*
+### M3 — Serial Monitor / REPL (the "Logcat") — DONE
+- ✅ Live streaming serial output panel — background `serialport` read thread in
+  Rust emitting `serial-data` events; bottom panel split into Output | Serial Monitor.
+- ✅ Send-line input → interactive REPL; interrupt (Ctrl-C) / soft-reset (Ctrl-D) controls.
+- ✅ "Run" streams live into the monitor with a Stop button (SIGINT to mpremote +
+  Ctrl-C to the board); monitor auto-pauses around mpremote/esptool ops (port is exclusive).
+- Deferred polish: timestamp toggle, scroll-lock toggle (autoscroll is automatic for now).
 
 ### M4 — Project & device file management
 - Create / rename / delete / move in the local tree (context menu).

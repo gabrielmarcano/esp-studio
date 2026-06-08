@@ -2,7 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { Download, Loader, Lock, RefreshCw, X } from "lucide-react";
+import {
+  Check,
+  CircleStop,
+  Copy,
+  Download,
+  Loader,
+  Lock,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+  X,
+} from "lucide-react";
 import Toolbar from "./components/Toolbar";
 import FileTree from "./components/FileTree";
 import CodeEditor from "./components/Editor";
@@ -31,6 +42,7 @@ export default function App() {
   const [activePath, setActivePath] = useState<string | null>(null);
   const [conn, setConn] = useState<Conn>({ kind: "none" });
   const [busy, setBusy] = useState(false);
+  const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string>("Welcome to ESPStudio.\n");
   const [showSettings, setShowSettings] = useState(false);
   const [showNew, setShowNew] = useState(false);
@@ -40,6 +52,9 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
   const [cursor, setCursor] = useState<{ line: number; col: number } | null>(null);
+  const [bottomTab, setBottomTab] = useState<"output" | "serial">("output");
+  const [serialLog, setSerialLog] = useState("");
+  const [replInput, setReplInput] = useState("");
 
   const active = tabs.find((t) => t.path === activePath) ?? null;
 
@@ -67,21 +82,41 @@ export default function App() {
   useEffect(() => {
     const el = consoleRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [log]);
+  }, [log, serialLog, bottomTab]);
 
   const append = useCallback((msg: string) => {
     setLog((l) => l + msg + "\n");
   }, []);
 
+  // Write raw bytes to the device over the live monitor (it owns the writer).
+  // Used for control codes like Ctrl-C (\x03, interrupt) and Ctrl-D (\x04,
+  // soft reboot). The device echoes input back, so we don't print it locally.
+  const sendRaw = useCallback(
+    async (data: string) => {
+      try {
+        await api.monitorWrite(data);
+      } catch (e) {
+        append(`serial write failed: ${e}`);
+      }
+    },
+    [append]
+  );
+
+  // Send the typed REPL line.
+  const sendRepl = useCallback(async () => {
+    await sendRaw(replInput + "\r\n");
+    setReplInput("");
+  }, [replInput, sendRaw]);
+
   const copyLog = useCallback(async () => {
     try {
-      await writeText(log);
+      await writeText(bottomTab === "output" ? log : serialLog);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (e) {
       append(`copy failed: ${e}`);
     }
-  }, [log, append]);
+  }, [log, serialLog, bottomTab, append]);
 
   const persist = useCallback((s: Settings) => {
     setSettings(s);
@@ -135,6 +170,16 @@ export default function App() {
       un.then((f) => f());
     };
   }, [append]);
+
+  // Live serial output from the device monitor (capped to avoid unbounded growth).
+  useEffect(() => {
+    const un = listen<string>("serial-data", (e) =>
+      setSerialLog((l) => (l + e.payload).slice(-200000))
+    );
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
 
   // ---- device connection lifecycle ----
   const treeCache = useRef<Record<string, FileNode[]>>({});
@@ -226,6 +271,17 @@ export default function App() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [reconcile]);
+
+  // Serial monitor follows the connection: read live output while a MicroPython
+  // device is ready, release the port otherwise. The serial queue pauses/resumes
+  // the monitor around individual ops (upload/run/etc.) on its own.
+  useEffect(() => {
+    if (conn.kind === "ready") {
+      api.monitorStart(conn.port).catch(() => {});
+    } else if (conn.kind !== "connecting") {
+      api.monitorStop().catch(() => {});
+    }
+  }, [conn]);
 
   // Panel toggles: the macOS View menu emits these (⌘B/⌘J); off macOS we bind
   // the same keys directly since there's no native menu bar.
@@ -346,12 +402,23 @@ export default function App() {
     });
   };
 
+  // Run the current file with live output: save it if dirty, switch to the
+  // Serial Monitor (output streams there), and stay interruptible via Stop.
   const runCurrent = () => {
     if (!active || active.readOnly) return;
-    return withBusy(`run ${active.path.split("/").pop()}`, () =>
-      api.runFile(settings, active.path)
-    );
+    const path = active.path;
+    setBottomTab("serial");
+    setRunning(true);
+    return withBusy(`Running ${path.split("/").pop()} on device`, async () => {
+      if (active.dirty) {
+        await api.writeFile(path, active.content);
+        setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, dirty: false } : t)));
+      }
+      await api.runFileStreamed(settings, path);
+    }).finally(() => setRunning(false));
   };
+
+  const stopRun = () => api.runStop().catch(() => {});
 
   const handleCreate = async (args: {
     parent: string;
@@ -404,6 +471,8 @@ export default function App() {
           withBusy("upload project", () => api.uploadProject(settings).then(refreshDevice))
         }
         onRun={() => runCurrent()}
+        onStop={stopRun}
+        running={running}
         onReset={() => withBusy("reset device", () => api.resetDevice(settings))}
         onFlash={() => flashMicroPython()}
         onSettings={() => setShowSettings(true)}
@@ -529,19 +598,90 @@ export default function App() {
           {settings.consoleOpen && (
           <div className="console">
             <div className="console-header">
-              <span>OUTPUT</span>
-              <div className="console-actions">
-                <button className="mini" onClick={copyLog}>
-                  {copied ? "copied" : "copy"}
+              <div className="panel-tabs">
+                <button
+                  className={`panel-tab ${bottomTab === "output" ? "active" : ""}`}
+                  onClick={() => setBottomTab("output")}
+                >
+                  Output
                 </button>
-                <button className="mini" onClick={() => setLog("")}>
-                  clear
+                <button
+                  className={`panel-tab ${bottomTab === "serial" ? "active" : ""}`}
+                  onClick={() => setBottomTab("serial")}
+                >
+                  Serial Monitor
+                  {conn.kind === "ready" && <span className="panel-tab-dot" />}
+                </button>
+              </div>
+              <div className="console-actions">
+                {bottomTab === "serial" && (
+                  <>
+                    <button
+                      className="panel-action"
+                      onClick={() => sendRaw("\x03")}
+                      disabled={conn.kind !== "ready"}
+                      title="Interrupt the running program (Ctrl-C)"
+                    >
+                      <CircleStop size={15} />
+                    </button>
+                    <button
+                      className="panel-action"
+                      onClick={() => sendRaw("\x04")}
+                      disabled={conn.kind !== "ready"}
+                      title="Soft reboot the device (Ctrl-D)"
+                    >
+                      <RotateCcw size={15} />
+                    </button>
+                    <span className="panel-action-sep" />
+                  </>
+                )}
+                <button
+                  className="panel-action"
+                  onClick={copyLog}
+                  title={copied ? "Copied" : "Copy output"}
+                >
+                  {copied ? <Check size={15} /> : <Copy size={15} />}
+                </button>
+                <button
+                  className="panel-action"
+                  onClick={() => (bottomTab === "output" ? setLog("") : setSerialLog(""))}
+                  title="Clear"
+                >
+                  <Trash2 size={15} />
                 </button>
               </div>
             </div>
             <pre className="console-body" ref={consoleRef} onScroll={onConsoleScroll}>
-              {log}
+              {bottomTab === "output" ? log : serialLog}
             </pre>
+            {bottomTab === "serial" && (
+              <div className="repl-input">
+                <input
+                  type="text"
+                  placeholder={
+                    conn.kind === "ready"
+                      ? "Type a REPL command and press Enter…"
+                      : "Connect a MicroPython device to use the REPL"
+                  }
+                  value={replInput}
+                  disabled={conn.kind !== "ready"}
+                  onChange={(e) => setReplInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      sendRepl();
+                    } else if ((e.ctrlKey || e.metaKey) && e.key === "c" && !replInput) {
+                      // Ctrl-C with an empty line → interrupt the running program.
+                      e.preventDefault();
+                      sendRaw("\x03");
+                    } else if ((e.ctrlKey || e.metaKey) && e.key === "d") {
+                      e.preventDefault();
+                      sendRaw("\x04"); // soft reboot
+                    }
+                  }}
+                />
+              </div>
+            )}
           </div>
           )}
         </main>

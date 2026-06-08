@@ -13,14 +13,36 @@ const mpy = (s: Settings) => (s.useOwnBinaries ? s.mpyCross : "");
 // The serial port is exclusive: overlapping mpremote/esptool calls corrupt each
 // other (e.g. a detection probe running during a snapshot wrongly reports "no
 // MicroPython"). Run every device/serial command one at a time, in order.
+//
+// The serial monitor also holds the port open, so we pause it for the whole
+// burst of queued ops (idle→busy → pause; drained → resume) and each op waits
+// for the pause to complete before opening the port. monitor_pause/resume are
+// no-ops when the monitor isn't running.
 let serialChain: Promise<unknown> = Promise.resolve();
+let pending = 0;
+let pausing: Promise<unknown> = Promise.resolve();
 function serial<T>(fn: () => Promise<T>): Promise<T> {
-  const next = serialChain.then(fn, fn);
-  serialChain = next.then(
+  if (pending === 0) pausing = invoke("monitor_pause").catch(() => {});
+  pending += 1;
+  const guarded = async () => {
+    await pausing;
+    return fn();
+  };
+  const run = serialChain.then(guarded, guarded);
+  serialChain = run.then(
     () => {},
     () => {}
   );
-  return next;
+  void run
+    .then(
+      () => {},
+      () => {}
+    )
+    .finally(() => {
+      pending -= 1;
+      if (pending === 0) invoke("monitor_resume").catch(() => {});
+    });
+  return run;
 }
 
 export interface FileNode {
@@ -73,8 +95,16 @@ export const uploadFile = (s: Settings, local: string, remote?: string) =>
     })
   );
 
-export const runFile = (s: Settings, local: string) =>
-  serial(() => invoke<string>("run_file", { mpremote: mp(s), port: s.port, local }));
+// Streamed run: output flows live to the Serial Monitor via `serial-data`. Goes
+// through the queue (pauses the live monitor) and resolves when the script ends
+// or is stopped. runStop is intentionally NOT queued — it must interrupt the
+// in-flight run rather than wait behind it.
+export const runFileStreamed = (s: Settings, local: string) =>
+  serial(() =>
+    invoke<void>("run_file_streamed", { mpremote: mp(s), port: s.port, local })
+  );
+
+export const runStop = () => invoke<void>("run_stop");
 
 export const resetDevice = (s: Settings) =>
   serial(() => invoke<string>("reset_device", { mpremote: mp(s), port: s.port }));
@@ -132,6 +162,15 @@ export const flashFirmware = (s: Settings, binPath: string, erase: boolean) =>
       },
     })
   );
+
+// ---- serial monitor ----
+// The monitor reads the MicroPython REPL/serial output at 115200 (firmware baud,
+// independent of the flash baud). Not queued: it deliberately holds the port,
+// and the queue above pauses it around other ops.
+export const monitorStart = (port: string) =>
+  invoke<void>("monitor_start", { port, baud: "115200" });
+export const monitorStop = () => invoke<void>("monitor_stop");
+export const monitorWrite = (data: string) => invoke<void>("monitor_write", { data });
 
 // ---- tool versions (for the About screen) ----
 export interface ToolVersions {

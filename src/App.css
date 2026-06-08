@@ -84,6 +84,15 @@ body,
   opacity: 0.4;
   cursor: default;
 }
+/* Run → Stop: a clear "this is interruptible / active" affordance. */
+.toolbar button.stop {
+  background: #5a1d1d;
+  border-color: #8b2e2e;
+  color: #f5d0d0;
+}
+.toolbar button.stop:hover:not(:disabled) {
+  background: #6e2424;
+}
 .toolbar select {
   background: var(--bg-alt);
   color: var(--fg);
@@ -399,15 +408,75 @@ body,
 .console-header {
   display: flex;
   justify-content: space-between;
-  padding: 4px 10px;
+  align-items: center;
+  padding: 0 10px;
   font-size: 11px;
   color: var(--fg-dim);
-  text-transform: uppercase;
   border-bottom: 1px solid var(--border);
+}
+.panel-tabs {
+  display: flex;
+  gap: 4px;
+}
+.panel-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 4px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--fg-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+.panel-tab:hover {
+  color: var(--fg);
+}
+.panel-tab.active {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+}
+.panel-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3fb950;
 }
 .console-actions {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: 2px;
+}
+/* Icon buttons in the panel header (interrupt / soft reset / copy / clear). */
+.panel-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.panel-action:hover:not(:disabled) {
+  background: var(--bg-bar);
+  color: var(--fg);
+}
+.panel-action:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.panel-action-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--border);
 }
 .console-body {
   flex: 1;
@@ -418,6 +487,27 @@ body,
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.repl-input {
+  border-top: 1px solid var(--border);
+  padding: 6px 10px;
+}
+.repl-input input {
+  width: 100%;
+  background: #0e0e0e;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: var(--fg);
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 12px;
+}
+.repl-input input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.repl-input input:disabled {
+  opacity: 0.5;
 }
 
 /* ---- modals ---- */

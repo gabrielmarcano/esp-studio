@@ -3,11 +3,13 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, State};
 
 // ---------- helpers ----------
 
@@ -487,11 +489,126 @@ pub async fn upload_file(
     run(&mpremote, &["connect", &port, "fs", "cp", &local, &dest])
 }
 
-/// Run a local file on the device without uploading: `mpremote connect <port> run <local>`.
+// Tracks the currently running `mpremote run` so Run can be stopped. `stopped`
+// distinguishes a user Stop (clean) from a real crash (non-zero we surface).
+#[derive(Default)]
+struct Run {
+    pid: Option<u32>,
+    stopped: bool,
+}
+
+#[derive(Default)]
+pub struct RunState(Mutex<Run>);
+
+/// Run a local file on the device, streaming its output live into the Serial
+/// Monitor (`serial-data` events) so long-running scripts show output in real
+/// time. The pid is recorded so `run_stop` can interrupt it. The serial queue in
+/// api.ts pauses the live monitor for the duration (mpremote needs the port).
 #[tauri::command]
-pub async fn run_file(mpremote: String, port: String, local: String) -> Result<String, String> {
+pub async fn run_file_streamed(
+    app: AppHandle,
+    state: State<'_, RunState>,
+    mpremote: String,
+    port: String,
+    local: String,
+) -> Result<(), String> {
     let mpremote = tool_path(&mpremote, "mpremote");
-    run(&mpremote, &["connect", &port, "run", &local])
+    let mut child = Command::new(&mpremote)
+        .args(["connect", &port, "run", &local])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to launch `{mpremote}`: {e}"))?;
+
+    {
+        let mut g = state.0.lock().map_err(|e| e.to_string())?;
+        g.pid = Some(child.id());
+        g.stopped = false;
+    }
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let app_err = app.clone();
+    let err_handle = std::thread::spawn(move || {
+        if let Some(s) = stderr {
+            for line in BufReader::new(s).lines().map_while(Result::ok) {
+                let _ = app_err.emit("serial-data", strip_ansi(&line) + "\n");
+            }
+        }
+    });
+    if let Some(s) = stdout {
+        for line in BufReader::new(s).lines().map_while(Result::ok) {
+            let _ = app.emit("serial-data", strip_ansi(&line) + "\n");
+        }
+    }
+    let _ = err_handle.join();
+    let status = child.wait().map_err(|e| format!("wait failed: {e}"))?;
+
+    let stopped = {
+        let mut g = state.0.lock().map_err(|e| e.to_string())?;
+        g.pid = None;
+        g.stopped
+    };
+
+    // On a user Stop, killing mpremote only ends the host-side follower — the
+    // script keeps executing on the board. mpremote has just freed the port, so
+    // grab it briefly and send a real Ctrl-C down the wire to raise a
+    // KeyboardInterrupt on the device and drop it back to the REPL. We do this
+    // here (before returning) so it happens before the JS queue resumes the live
+    // monitor, avoiding a fight over the port.
+    if stopped {
+        if let Ok(mut p) = serialport::new(&port, 115200)
+            .timeout(Duration::from_millis(100))
+            .open()
+        {
+            // A single Ctrl-C raises KeyboardInterrupt and halts the script;
+            // mpremote's own cleanup already restores the friendly REPL, so we
+            // don't re-send Ctrl-B (that would print a duplicate banner). Read
+            // the response back briefly and surface it so the user sees the stop.
+            let _ = p.write_all(b"\x03");
+            let _ = p.flush();
+            let mut buf = [0u8; 1024];
+            let deadline = Instant::now() + Duration::from_millis(300);
+            while Instant::now() < deadline {
+                match p.read(&mut buf) {
+                    Ok(n) if n > 0 => {
+                        let _ = app.emit(
+                            "serial-data",
+                            String::from_utf8_lossy(&buf[..n]).to_string(),
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // A user Stop interrupts mpremote (non-zero exit) — that's not a failure.
+    if status.success() || stopped {
+        Ok(())
+    } else {
+        Err(format!("`mpremote run` exited with {status}"))
+    }
+}
+
+/// Stop the running file: SIGINT mpremote so it exits and releases the port; the
+/// board itself is then interrupted with a Ctrl-C at the end of run_file_streamed.
+#[tauri::command]
+pub async fn run_stop(state: State<'_, RunState>) -> Result<(), String> {
+    let pid = {
+        let mut g = state.0.lock().map_err(|e| e.to_string())?;
+        g.stopped = true;
+        g.pid
+    };
+    if let Some(pid) = pid {
+        #[cfg(unix)]
+        let _ = Command::new("kill").args(["-INT", &pid.to_string()]).status();
+        #[cfg(windows)]
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .status();
+    }
+    Ok(())
 }
 
 /// Soft-reset the device.
@@ -889,3 +1006,132 @@ while True:
     led.value(not led.value())
     time.sleep(0.5)
 "#;
+
+// ---------- serial monitor ----------
+//
+// Holds the serial port open in a background thread and streams everything the
+// device prints as `serial-data` events. The port is exclusive, so the monitor
+// is paused (port released) around every mpremote/esptool op — see the serial
+// queue in src/lib/api.ts, which calls monitor_pause/resume.
+
+#[derive(Default)]
+pub struct MonitorState(Mutex<Monitor>);
+
+#[derive(Default)]
+struct Monitor {
+    port: String,
+    baud: u32,
+    active: bool, // the user wants the monitor on (vs. just paused for an op)
+    stop: Option<Arc<AtomicBool>>,
+    thread: Option<std::thread::JoinHandle<()>>,
+    writer: Option<Box<dyn serialport::SerialPort>>,
+}
+
+impl Monitor {
+    fn open(&mut self, app: &AppHandle) {
+        if self.thread.is_some() || self.port.is_empty() {
+            return;
+        }
+        let baud = if self.baud == 0 { 115200 } else { self.baud };
+        let port = match serialport::new(&self.port, baud)
+            .timeout(Duration::from_millis(200))
+            .open()
+        {
+            Ok(p) => p,
+            Err(_) => return, // device busy/absent — stay closed, retry on resume
+        };
+        let writer = match port.try_clone() {
+            Ok(w) => w,
+            Err(_) => return,
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_t = stop.clone();
+        let app_t = app.clone();
+        let mut reader = port;
+        let handle = std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                if stop_t.load(Ordering::Relaxed) {
+                    break;
+                }
+                match reader.read(&mut buf) {
+                    Ok(0) => {}
+                    Ok(n) => {
+                        let _ = app_t
+                            .emit("serial-data", String::from_utf8_lossy(&buf[..n]).to_string());
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {}
+                    Err(_) => break, // port lost (unplug) — exit the loop
+                }
+            }
+        });
+        self.stop = Some(stop);
+        self.thread = Some(handle);
+        self.writer = Some(writer);
+    }
+
+    fn close(&mut self) {
+        if let Some(stop) = self.stop.take() {
+            stop.store(true, Ordering::Relaxed);
+        }
+        if let Some(h) = self.thread.take() {
+            let _ = h.join();
+        }
+        self.writer = None;
+    }
+}
+
+/// Start (or restart) the monitor on a port and mark it active.
+#[tauri::command]
+pub async fn monitor_start(
+    app: AppHandle,
+    state: State<'_, MonitorState>,
+    port: String,
+    baud: String,
+) -> Result<(), String> {
+    let mut m = state.0.lock().map_err(|e| e.to_string())?;
+    m.port = port;
+    m.baud = baud.parse().unwrap_or(115200);
+    m.active = true;
+    m.open(&app);
+    Ok(())
+}
+
+/// Stop the monitor entirely (user turned it off / device disconnected).
+#[tauri::command]
+pub async fn monitor_stop(state: State<'_, MonitorState>) -> Result<(), String> {
+    let mut m = state.0.lock().map_err(|e| e.to_string())?;
+    m.active = false;
+    m.close();
+    Ok(())
+}
+
+/// Release the port so an mpremote/esptool op can use it (stays active).
+#[tauri::command]
+pub async fn monitor_pause(state: State<'_, MonitorState>) -> Result<(), String> {
+    let mut m = state.0.lock().map_err(|e| e.to_string())?;
+    if m.active {
+        m.close();
+    }
+    Ok(())
+}
+
+/// Re-acquire the port after an op, if the monitor is still active.
+#[tauri::command]
+pub async fn monitor_resume(app: AppHandle, state: State<'_, MonitorState>) -> Result<(), String> {
+    let mut m = state.0.lock().map_err(|e| e.to_string())?;
+    if m.active {
+        m.open(&app);
+    }
+    Ok(())
+}
+
+/// Write to the device (REPL input). No-op when the monitor isn't holding the port.
+#[tauri::command]
+pub async fn monitor_write(state: State<'_, MonitorState>, data: String) -> Result<(), String> {
+    let mut m = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(w) = m.writer.as_mut() {
+        w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}

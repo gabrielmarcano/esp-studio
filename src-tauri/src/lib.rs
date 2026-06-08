@@ -16,7 +16,8 @@ pub fn run() {
             commands::connect_device,
             commands::device_read,
             commands::upload_file,
-            commands::run_file,
+            commands::run_file_streamed,
+            commands::run_stop,
             commands::reset_device,
             commands::bundled_versions,
             commands::override_versions,
@@ -24,7 +25,14 @@ pub fn run() {
             commands::upload_project,
             commands::flash_firmware,
             commands::new_project,
+            commands::monitor_start,
+            commands::monitor_stop,
+            commands::monitor_pause,
+            commands::monitor_resume,
+            commands::monitor_write,
         ])
+        .manage(commands::MonitorState::default())
+        .manage(commands::RunState::default())
         .setup(|_app| {
             // macOS gets a native app menu; its "About ESPStudio" item opens our
             // own rich modal (via an event) instead of the limited system panel.
