@@ -57,13 +57,6 @@ export const listSerialPaths = () => invoke<string[]>("list_serial_paths");
 export const listPorts = (s: Settings) =>
   serial(() => invoke<PortInfo[]>("list_ports", { mpremote: mp(s) }));
 
-export const deviceTree = (s: Settings): Promise<FileNode[]> =>
-  serial(() =>
-    invoke<string>("device_tree", { mpremote: mp(s), port: s.port }).then(
-      (json) => (json ? (JSON.parse(json) as FileNode[]) : [])
-    )
-  );
-
 export const deviceRead = (s: Settings, path: string) =>
   serial(() => invoke<string>("device_read", { mpremote: mp(s), port: s.port, path }));
 
@@ -86,22 +79,27 @@ export const runFile = (s: Settings, local: string) =>
 export const resetDevice = (s: Settings) =>
   serial(() => invoke<string>("reset_device", { mpremote: mp(s), port: s.port }));
 
-export interface DeviceInfo {
+// Result of one connect: detection + (when MicroPython) the filesystem tree as
+// a JSON string the caller parses into FileNode[].
+export interface DeviceState {
   micropython: boolean;
   version: string | null;
-  machine: string | null;
   chip: string | null;
   suggested_offset: string | null;
+  tree: string | null;
 }
 
-export const detectDevice = (s: Settings) =>
+export const connectDevice = (s: Settings) =>
   serial(() =>
-    invoke<DeviceInfo>("detect_device", {
+    invoke<DeviceState>("connect_device", {
       mpremote: mp(s),
       esptool: esp(s),
       port: s.port,
     })
   );
+
+export const parseTree = (json: string | null): FileNode[] =>
+  json ? (JSON.parse(json) as FileNode[]) : [];
 
 export const uploadProject = (s: Settings) =>
   serial(() =>

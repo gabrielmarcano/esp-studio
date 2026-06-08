@@ -364,8 +364,8 @@ pub async fn list_ports(mpremote: String) -> Result<Vec<PortInfo>, String> {
 // of small text files, so the UI can open them instantly (read-only) without a
 // serial round-trip per file. Binary/non-text files are flagged not-readable;
 // oversized text files are listed without content (the UI lazy-reads on demand).
-const WALK_SCRIPT: &str = r#"
-import os, json
+const SNAPSHOT_SCRIPT: &str = r#"
+import os, sys, json
 TEXT = ('.py', '.txt', '.json', '.md', '.cfg', '.csv', '.html', '.htm', '.js', '.css', '.toml', '.ini', '.yaml', '.yml', '.env', '.sh')
 MAX = 65536
 def istext(name):
@@ -398,16 +398,64 @@ def walk(p):
         else:
             out.append(filenode(name, full))
     return out
-print(json.dumps(walk('/')))
+try:
+    u = os.uname()
+    info = {"impl": sys.implementation.name, "release": u.release, "version": u.version, "machine": u.machine}
+except Exception:
+    info = {"impl": sys.implementation.name}
+print(json.dumps({"info": info, "tree": walk('/')}))
 "#;
 
-/// Snapshot the device filesystem (tree + small text-file contents) via a single
-/// `mpremote exec` round-trip. Returns the raw JSON string (frontend parses it).
+#[derive(Serialize)]
+pub struct DeviceState {
+    micropython: bool,
+    version: Option<String>,          // MicroPython release, e.g. "1.28.0"
+    chip: Option<String>,             // normalized family, e.g. "ESP32", "ESP32-S3"
+    suggested_offset: Option<String>, // flash offset for that chip
+    tree: Option<String>,             // JSON filesystem array (only when MicroPython)
+}
+
+/// Connect to the board in ONE mpremote exec: it both proves MicroPython is
+/// running and returns the filesystem snapshot. On failure (no MicroPython),
+/// fall back to esptool to identify the chip for the flash banner.
 #[tauri::command]
-pub async fn device_tree(mpremote: String, port: String) -> Result<String, String> {
+pub async fn connect_device(mpremote: String, esptool: String, port: String) -> DeviceState {
     let mpremote = tool_path(&mpremote, "mpremote");
-    let out = run(&mpremote, &["connect", &port, "exec", WALK_SCRIPT])?;
-    Ok(out.trim().to_string())
+    let esptool = tool_path(&esptool, "esptool");
+
+    if let Ok(out) = run_timeout(&mpremote, &["connect", &port, "exec", SNAPSHOT_SCRIPT], 30) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(out.trim()) {
+            let version = v["info"]["release"].as_str().map(|s| s.to_string());
+            let chip = v["info"]["machine"].as_str().and_then(normalize_chip);
+            let suggested_offset = chip.as_deref().map(|c| offset_for_chip(c).to_string());
+            let tree = v.get("tree").map(|t| t.to_string());
+            return DeviceState {
+                micropython: true,
+                version,
+                chip,
+                suggested_offset,
+                tree,
+            };
+        }
+    }
+
+    // No MicroPython (or unparsable) → identify the chip with esptool.
+    let chip = run_timeout(&esptool, &["--port", &port, "chip-id"], 25)
+        .ok()
+        .and_then(|out| {
+            out.lines()
+                .find(|l| l.trim_start().starts_with("Chip is"))
+                .and_then(normalize_chip)
+                .or_else(|| normalize_chip(&out))
+        });
+    let suggested_offset = chip.as_deref().map(|c| offset_for_chip(c).to_string());
+    DeviceState {
+        micropython: false,
+        version: None,
+        chip,
+        suggested_offset,
+        tree: None,
+    }
 }
 
 /// Read a file off the device: `mpremote connect <port> fs cat :<path>`.
@@ -453,19 +501,7 @@ pub async fn reset_device(mpremote: String, port: String) -> Result<String, Stri
     run(&mpremote, &["connect", &port, "reset"])
 }
 
-// ---------- device detection ----------
-
-#[derive(Serialize)]
-pub struct DeviceInfo {
-    micropython: bool,
-    version: Option<String>, // MicroPython sys.version, if present
-    machine: Option<String>, // os.uname().machine, if present
-    chip: Option<String>,    // normalized chip family (e.g. "ESP32", "ESP32-S3")
-    suggested_offset: Option<String>, // flash offset for that chip
-}
-
-// Probe printed line-by-line so we can parse a fixed order on stdout.
-const MP_PROBE: &str = "import sys,os\nprint(sys.implementation.name)\nprint(sys.version)\ntry:\n    print(os.uname().machine)\nexcept Exception:\n    print('')\n";
+// ---------- chip helpers ----------
 
 /// MicroPython flash offset by chip family. The original ESP32 uses 0x1000;
 /// every newer ESP32 variant and the ESP8266 use 0x0.
@@ -498,65 +534,6 @@ fn normalize_chip(raw: &str) -> Option<String> {
         return Some("ESP32".to_string());
     }
     None
-}
-
-/// Detect chip type and whether MicroPython is installed.
-///
-/// First gently asks the running firmware (via mpremote) whether it's
-/// MicroPython. If not, falls back to esptool, which reads the chip type from
-/// the ROM bootloader regardless of firmware (this resets the board into and
-/// out of download mode — harmless when there's no app firmware to interrupt).
-#[tauri::command]
-pub async fn detect_device(
-    mpremote: String,
-    esptool: String,
-    port: String,
-) -> Result<DeviceInfo, String> {
-    let mpremote = tool_path(&mpremote, "mpremote");
-    let esptool = tool_path(&esptool, "esptool");
-
-    // 1. Is MicroPython running?
-    if let Ok(out) = run_timeout(&mpremote, &["connect", &port, "exec", MP_PROBE], 6) {
-        let mut lines = out.lines();
-        let impl_name = lines.next().unwrap_or("").trim().to_lowercase();
-        if impl_name.contains("micropython") {
-            let version = lines
-                .next()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-            let machine = lines
-                .next()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty());
-            let chip = machine.as_deref().and_then(normalize_chip);
-            let suggested_offset = chip.as_deref().map(|c| offset_for_chip(c).to_string());
-            return Ok(DeviceInfo {
-                micropython: true,
-                version,
-                machine,
-                chip,
-                suggested_offset,
-            });
-        }
-    }
-
-    // 2. No MicroPython → ask esptool what chip this is.
-    let chip = run_timeout(&esptool, &["--port", &port, "chip-id"], 25)
-        .ok()
-        .and_then(|out| {
-            out.lines()
-                .find(|l| l.trim_start().starts_with("Chip is"))
-                .and_then(normalize_chip)
-                .or_else(|| normalize_chip(&out))
-        });
-    let suggested_offset = chip.as_deref().map(|c| offset_for_chip(c).to_string());
-    Ok(DeviceInfo {
-        micropython: false,
-        version: None,
-        machine: None,
-        chip,
-        suggested_offset,
-    })
 }
 
 // ---------- tool versions (About screen) ----------
