@@ -192,6 +192,16 @@ export default function App() {
 
   const openDeviceFile = async (node: FileNode) => {
     if (node.is_dir) return;
+    if (node.readable === false) {
+      append(`${node.path} — binary file, not viewable (download coming soon).`);
+      return;
+    }
+    // Prefetched by the snapshot → open instantly, read-only.
+    if (node.content !== undefined) {
+      setFile({ path: `device:${node.path}`, content: node.content, readOnly: true, dirty: false });
+      return;
+    }
+    // Readable but not prefetched (over size cap) → lazy serial read.
     setOpeningFile(true);
     await withBusy(`read ${node.path} from device`, async () => {
       const content = await api.deviceRead(settings, node.path);

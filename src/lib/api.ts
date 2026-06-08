@@ -15,6 +15,10 @@ export interface FileNode {
   path: string;
   is_dir: boolean;
   children?: FileNode[];
+  // Device snapshot only: prefetched text content, and whether the file is
+  // viewable at all (false for binary/.mpy). Absent for local files.
+  content?: string;
+  readable?: boolean;
 }
 
 export interface PortInfo {

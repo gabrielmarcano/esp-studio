@@ -52,11 +52,18 @@ function TreeNode({
     );
   }
 
+  // Device snapshot marks binary/non-text files readable=false; dim + disable.
+  const openable = node.readable !== false;
   return (
     <div
-      className={"tree-row" + (activePath === node.path ? " active" : "")}
+      className={
+        "tree-row" +
+        (activePath === node.path ? " active" : "") +
+        (openable ? "" : " disabled")
+      }
       style={{ paddingLeft: depth * 12 + 22 }}
-      onClick={() => onOpen(node)}
+      onClick={() => openable && onOpen(node)}
+      title={openable ? undefined : "Binary file — not viewable yet"}
     >
       <span className="tree-icon">
         {node.name.endsWith(".py") ? <FileCode size={13} /> : <File size={13} />}

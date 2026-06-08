@@ -336,9 +336,30 @@ pub async fn list_ports(mpremote: String) -> Result<Vec<PortInfo>, String> {
     Ok(ports)
 }
 
-// Walks the device filesystem in one round-trip and prints a JSON tree.
+// Snapshot the device filesystem in ONE round-trip: the tree plus the contents
+// of small text files, so the UI can open them instantly (read-only) without a
+// serial round-trip per file. Binary/non-text files are flagged not-readable;
+// oversized text files are listed without content (the UI lazy-reads on demand).
 const WALK_SCRIPT: &str = r#"
 import os, json
+TEXT = ('.py', '.txt', '.json', '.md', '.cfg', '.csv', '.html', '.htm', '.js', '.css', '.toml', '.ini', '.yaml', '.yml', '.env', '.sh')
+MAX = 65536
+def istext(name):
+    low = name.lower()
+    for ext in TEXT:
+        if low.endswith(ext):
+            return True
+    return False
+def filenode(name, full):
+    node = {"name": name, "path": full, "is_dir": False, "readable": istext(name)}
+    if node["readable"]:
+        try:
+            if os.stat(full)[6] <= MAX:
+                with open(full) as f:
+                    node["content"] = f.read()
+        except Exception:
+            pass
+    return node
 def walk(p):
     out = []
     try:
@@ -351,13 +372,13 @@ def walk(p):
         if typ & 0x4000:
             out.append({"name": name, "path": full, "is_dir": True, "children": walk(full)})
         else:
-            out.append({"name": name, "path": full, "is_dir": False})
+            out.append(filenode(name, full))
     return out
 print(json.dumps(walk('/')))
 "#;
 
-/// Walk the device filesystem via a single `mpremote exec` round-trip.
-/// Returns the raw JSON string (frontend parses it).
+/// Snapshot the device filesystem (tree + small text-file contents) via a single
+/// `mpremote exec` round-trip. Returns the raw JSON string (frontend parses it).
 #[tauri::command]
 pub async fn device_tree(mpremote: String, port: String) -> Result<String, String> {
     let mpremote = tool_path(&mpremote, "mpremote");

@@ -205,6 +205,13 @@ body,
 .tree-row.active {
   background: var(--active);
 }
+.tree-row.disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tree-row.disabled:hover {
+  background: none;
+}
 .tree-caret {
   display: inline-flex;
   align-items: center;
