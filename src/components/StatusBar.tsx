@@ -12,7 +12,13 @@ export type Conn =
 
 const short = (p: string) => p.split("/").pop();
 
-export default function StatusBar({ conn }: { conn: Conn }) {
+interface Props {
+  conn: Conn;
+  file: { name: string; dirty: boolean; readOnly: boolean } | null;
+  cursor: { line: number; col: number } | null;
+}
+
+export default function StatusBar({ conn, file, cursor }: Props) {
   let dot = "idle";
   let text: ReactNode = "No device";
 
@@ -38,6 +44,17 @@ export default function StatusBar({ conn }: { conn: Conn }) {
     <div className="statusbar">
       <span className={"status-dot " + dot} />
       <span className="status-text">{text}</span>
+      <span className="status-spacer" />
+      {file && (
+        <span className="status-file">
+          {file.readOnly ? "read-only" : file.dirty ? "● unsaved" : "saved"}
+        </span>
+      )}
+      {file && cursor && (
+        <span className="status-pos">
+          Ln {cursor.line}, Col {cursor.col}
+        </span>
+      )}
     </div>
   );
 }

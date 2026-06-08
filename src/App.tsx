@@ -38,6 +38,7 @@ export default function App() {
   const [refreshingLocal, setRefreshingLocal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
+  const [cursor, setCursor] = useState<{ line: number; col: number } | null>(null);
 
   // Console auto-scroll: stick to the bottom unless the user scrolled up.
   const consoleRef = useRef<HTMLPreElement>(null);
@@ -407,6 +408,7 @@ export default function App() {
               onChange={(v) =>
                 file && !file.readOnly && setFile({ ...file, content: v, dirty: true })
               }
+              onCursor={(line, col) => setCursor({ line, col })}
             />
             {openingFile && (
               <div className="editor-loading">
@@ -433,7 +435,15 @@ export default function App() {
         </main>
       </div>
 
-      <StatusBar conn={conn} />
+      <StatusBar
+        conn={conn}
+        file={
+          file
+            ? { name: file.path.split("/").pop() ?? "", dirty: file.dirty, readOnly: file.readOnly }
+            : null
+        }
+        cursor={cursor}
+      />
 
       {showSettings && (
         <SettingsModal

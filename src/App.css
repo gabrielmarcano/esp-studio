@@ -158,6 +158,13 @@ body,
   align-items: center;
   gap: 5px;
 }
+.status-spacer {
+  flex: 1;
+}
+.status-file,
+.status-pos {
+  font-variant-numeric: tabular-nums;
+}
 .status-dot {
   width: 8px;
   height: 8px;

@@ -1,4 +1,4 @@
-import Editor from "@monaco-editor/react";
+import Editor, { type OnMount } from "@monaco-editor/react";
 
 interface Props {
   path?: string;
@@ -6,6 +6,7 @@ interface Props {
   readOnly: boolean;
   dirty: boolean;
   onChange: (v: string) => void;
+  onCursor?: (line: number, col: number) => void;
 }
 
 function languageFor(path?: string): string {
@@ -25,7 +26,17 @@ export default function CodeEditor({
   readOnly,
   dirty,
   onChange,
+  onCursor,
 }: Props) {
+  const handleMount: OnMount = (editor) => {
+    if (!onCursor) return;
+    const p = editor.getPosition();
+    if (p) onCursor(p.lineNumber, p.column);
+    editor.onDidChangeCursorPosition((e) =>
+      onCursor(e.position.lineNumber, e.position.column)
+    );
+  };
+
   if (!path) {
     return (
       <div className="editor-placeholder">
@@ -55,6 +66,7 @@ export default function CodeEditor({
         language={languageFor(path)}
         value={value}
         onChange={(v) => onChange(v ?? "")}
+        onMount={handleMount}
         options={{
           readOnly,
           fontSize: 13,
