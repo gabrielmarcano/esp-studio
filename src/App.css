@@ -280,6 +280,60 @@ body,
   flex-direction: column;
   min-width: 0;
 }
+
+/* ---- editor tabs ---- */
+.tabs {
+  display: flex;
+  background: var(--bg-alt);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--fg-dim);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 200px;
+}
+.tab:hover {
+  background: var(--bg-bar);
+}
+.tab.active {
+  color: var(--fg);
+  background: var(--bg);
+}
+.tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab-icon {
+  color: var(--fg-dim);
+  flex-shrink: 0;
+}
+.tab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e2c08d;
+  flex-shrink: 0;
+}
+.tab-close {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-dim);
+  border-radius: 3px;
+  opacity: 0.55;
+}
+.tab-close:hover {
+  opacity: 1;
+  background: var(--border);
+}
 .editor-host {
   position: relative;
   flex: 1;

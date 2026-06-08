@@ -1,16 +1,10 @@
+import { useEffect, useRef } from "react";
 import Editor, { type OnMount } from "@monaco-editor/react";
 
-interface Props {
-  path?: string;
-  value: string;
-  readOnly: boolean;
-  dirty: boolean;
-  onChange: (v: string) => void;
-  onCursor?: (line: number, col: number) => void;
-}
+type Ed = Parameters<OnMount>[0];
+type Mon = Parameters<OnMount>[1];
 
-function languageFor(path?: string): string {
-  if (!path) return "plaintext";
+function languageFor(path: string): string {
   if (path.endsWith(".py")) return "python";
   if (path.endsWith(".json")) return "json";
   if (path.endsWith(".md")) return "markdown";
@@ -20,24 +14,71 @@ function languageFor(path?: string): string {
   return "plaintext";
 }
 
+interface Props {
+  activePath: string | null;
+  value: string; // content of the active tab (used only when its model is created)
+  openPaths: string[]; // dispose models for files no longer open
+  readOnly: boolean;
+  onChange: (path: string, value: string) => void;
+  onCursor?: (line: number, col: number) => void;
+}
+
+// Persistent multi-model editor: one Monaco model per open file, so switching
+// tabs is instant and keeps each file's cursor/scroll/undo (no remount).
 export default function CodeEditor({
-  path,
+  activePath,
   value,
+  openPaths,
   readOnly,
-  dirty,
   onChange,
   onCursor,
 }: Props) {
-  const handleMount: OnMount = (editor) => {
-    if (!onCursor) return;
-    const p = editor.getPosition();
-    if (p) onCursor(p.lineNumber, p.column);
-    editor.onDidChangeCursorPosition((e) =>
-      onCursor(e.position.lineNumber, e.position.column)
-    );
+  const edRef = useRef<Ed | null>(null);
+  const monRef = useRef<Mon | null>(null);
+  const models = useRef<Map<string, ReturnType<Mon["editor"]["createModel"]>>>(new Map());
+  // keep callbacks fresh for the per-model listeners created once
+  const cb = useRef({ onChange, onCursor });
+  cb.current = { onChange, onCursor };
+
+  const showActive = () => {
+    const ed = edRef.current;
+    const mon = monRef.current;
+    if (!ed || !mon || !activePath) return;
+    let model = models.current.get(activePath);
+    if (!model) {
+      const p = activePath;
+      const uri = mon.Uri.parse("inmemory://model/" + encodeURIComponent(p));
+      model = mon.editor.createModel(value, languageFor(p), uri);
+      model.onDidChangeContent(() => cb.current.onChange(p, model!.getValue()));
+      models.current.set(p, model);
+    }
+    if (ed.getModel() !== model) ed.setModel(model);
+    ed.updateOptions({ readOnly });
   };
 
-  if (!path) {
+  const handleMount: OnMount = (ed, mon) => {
+    edRef.current = ed;
+    mon && (monRef.current = mon);
+    ed.onDidChangeCursorPosition((e) =>
+      cb.current.onCursor?.(e.position.lineNumber, e.position.column)
+    );
+    showActive();
+  };
+
+  // Switch model when the active tab (or its read-only state) changes.
+  useEffect(showActive, [activePath, readOnly]);
+
+  // Dispose models for tabs that were closed.
+  useEffect(() => {
+    for (const [p, m] of models.current) {
+      if (!openPaths.includes(p)) {
+        m.dispose();
+        models.current.delete(p);
+      }
+    }
+  }, [openPaths]);
+
+  if (!activePath) {
     return (
       <div className="editor-placeholder">
         <p>Open a file from the sidebar to start editing.</p>
@@ -49,33 +90,18 @@ export default function CodeEditor({
   }
 
   return (
-    <div className="editor-wrap">
-      <div className="editor-tab">
-        <span>{path.split("/").pop()}</span>
-        {readOnly && <span className="badge">device · read-only</span>}
-        {dirty && !readOnly && <span className="badge dirty">unsaved</span>}
-      </div>
-      <Editor
-        // Remount per file (key) instead of Monaco's multi-model `path`, which
-        // fires onChange mid-swap and snaps back to the previous file.
-        key={path}
-        // suppress Monaco's default "Loading…" text during the per-file remount
-        loading={null}
-        height="100%"
-        theme="vs-dark"
-        language={languageFor(path)}
-        value={value}
-        onChange={(v) => onChange(v ?? "")}
-        onMount={handleMount}
-        options={{
-          readOnly,
-          fontSize: 13,
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          automaticLayout: true,
-          tabSize: 4,
-        }}
-      />
-    </div>
+    <Editor
+      height="100%"
+      theme="vs-dark"
+      loading={null}
+      onMount={handleMount}
+      options={{
+        fontSize: 13,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        automaticLayout: true,
+        tabSize: 4,
+      }}
+    />
   );
 }

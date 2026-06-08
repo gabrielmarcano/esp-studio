@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { Download, Loader, RefreshCw } from "lucide-react";
+import { Download, Loader, Lock, RefreshCw, X } from "lucide-react";
 import Toolbar from "./components/Toolbar";
 import FileTree from "./components/FileTree";
 import CodeEditor from "./components/Editor";
@@ -27,7 +27,8 @@ export default function App() {
   const [ports, setPorts] = useState<PortInfo[]>([]);
   const [localTree, setLocalTree] = useState<FileNode[]>([]);
   const [deviceTree, setDeviceTree] = useState<FileNode[]>([]);
-  const [file, setFile] = useState<OpenFile | null>(null);
+  const [tabs, setTabs] = useState<OpenFile[]>([]);
+  const [activePath, setActivePath] = useState<string | null>(null);
   const [conn, setConn] = useState<Conn>({ kind: "none" });
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string>("Welcome to ESPStudio.\n");
@@ -39,6 +40,22 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
   const [cursor, setCursor] = useState<{ line: number; col: number } | null>(null);
+
+  const active = tabs.find((t) => t.path === activePath) ?? null;
+
+  const openTab = (f: OpenFile) => {
+    setTabs((prev) => (prev.some((t) => t.path === f.path) ? prev : [...prev, f]));
+    setActivePath(f.path);
+  };
+  const closeTab = (path: string) => {
+    const idx = tabs.findIndex((t) => t.path === path);
+    const remaining = tabs.filter((t) => t.path !== path);
+    setTabs(remaining);
+    if (activePath === path) {
+      const neighbor = remaining[idx] ?? remaining[idx - 1] ?? null;
+      setActivePath(neighbor ? neighbor.path : null);
+    }
+  };
 
   // Console auto-scroll: stick to the bottom unless the user scrolled up.
   const consoleRef = useRef<HTMLPreElement>(null);
@@ -257,9 +274,13 @@ export default function App() {
   // ---- file actions ----
   const openLocalFile = async (node: FileNode) => {
     if (node.is_dir) return;
+    if (tabs.some((t) => t.path === node.path)) {
+      setActivePath(node.path); // already open → just focus its tab
+      return;
+    }
     try {
       const content = await api.readFile(node.path);
-      setFile({ path: node.path, content, readOnly: false, dirty: false });
+      openTab({ path: node.path, content, readOnly: false, dirty: false });
     } catch (e) {
       append(`Error opening ${node.path}: ${e}`);
     }
@@ -271,25 +292,31 @@ export default function App() {
       append(`${node.path} — binary file, not viewable (download coming soon).`);
       return;
     }
+    const path = `device:${node.path}`;
+    if (tabs.some((t) => t.path === path)) {
+      setActivePath(path);
+      return;
+    }
     // Prefetched by the snapshot → open instantly, read-only.
     if (node.content !== undefined) {
-      setFile({ path: `device:${node.path}`, content: node.content, readOnly: true, dirty: false });
+      openTab({ path, content: node.content, readOnly: true, dirty: false });
       return;
     }
     // Readable but not prefetched (over size cap) → lazy serial read.
     setOpeningFile(true);
     await withBusy(`read ${node.path} from device`, async () => {
       const content = await api.deviceRead(settings, node.path);
-      setFile({ path: `device:${node.path}`, content, readOnly: true, dirty: false });
+      openTab({ path, content, readOnly: true, dirty: false });
     });
     setOpeningFile(false);
   };
 
   const saveFile = async () => {
-    if (!file || file.readOnly) return;
-    await withBusy(`save ${file.path}`, async () => {
-      await api.writeFile(file.path, file.content);
-      setFile({ ...file, dirty: false });
+    if (!active || active.readOnly) return;
+    const path = active.path;
+    await withBusy(`save ${path}`, async () => {
+      await api.writeFile(path, active.content);
+      setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, dirty: false } : t)));
     });
   };
 
@@ -297,29 +324,32 @@ export default function App() {
     const dir = await open({ directory: true });
     if (typeof dir === "string") {
       persist({ ...settings, projectDir: dir });
-      setFile(null);
+      // close local tabs from the previous project; keep device tabs
+      setTabs((prev) => prev.filter((t) => t.path.startsWith("device:")));
+      setActivePath((cur) => (cur && !cur.startsWith("device:") ? null : cur));
     }
   };
 
   const refreshDevice = () => attach(settings);
 
   const uploadCurrent = () => {
-    if (!file || file.readOnly) return;
-    return withBusy(`upload ${file.path.split("/").pop()}`, async () => {
-      if (file.dirty) {
-        await api.writeFile(file.path, file.content);
-        setFile({ ...file, dirty: false });
+    if (!active || active.readOnly) return;
+    const path = active.path;
+    return withBusy(`upload ${path.split("/").pop()}`, async () => {
+      if (active.dirty) {
+        await api.writeFile(path, active.content);
+        setTabs((prev) => prev.map((t) => (t.path === path ? { ...t, dirty: false } : t)));
       }
-      const out = await api.uploadFile(settings, file.path);
+      const out = await api.uploadFile(settings, path);
       refreshDevice();
       return out;
     });
   };
 
   const runCurrent = () => {
-    if (!file || file.readOnly) return;
-    return withBusy(`run ${file.path.split("/").pop()}`, () =>
-      api.runFile(settings, file.path)
+    if (!active || active.readOnly) return;
+    return withBusy(`run ${active.path.split("/").pop()}`, () =>
+      api.runFile(settings, active.path)
     );
   };
 
@@ -352,8 +382,8 @@ export default function App() {
     await attach(settings);
   };
 
-  const canSave = !!file && !file.readOnly && file.dirty;
-  const canUpload = !!file && !file.readOnly && !!settings.port;
+  const canSave = !!active && !active.readOnly && active.dirty;
+  const canUpload = !!active && !active.readOnly && !!settings.port;
 
   return (
     <div className="app">
@@ -404,7 +434,13 @@ export default function App() {
               </button>
             </div>
             {settings.projectDir ? (
-              <FileTree nodes={localTree} onOpen={openLocalFile} activePath={file?.path} />
+              <FileTree
+                nodes={localTree}
+                onOpen={openLocalFile}
+                activePath={
+                  activePath && !activePath.startsWith("device:") ? activePath : undefined
+                }
+              />
             ) : (
               <div className="tree-empty">Open or create a project</div>
             )}
@@ -424,20 +460,63 @@ export default function App() {
                 <RefreshCw size={13} className={conn.kind === "connecting" ? "spin" : ""} />
               </button>
             </div>
-            <FileTree nodes={deviceTree} onOpen={openDeviceFile} activePath={file?.path} />
+            <FileTree
+              nodes={deviceTree}
+              onOpen={openDeviceFile}
+              activePath={
+                activePath?.startsWith("device:") ? activePath.slice("device:".length) : undefined
+              }
+            />
           </div>
         </aside>
         )}
 
         <main className="main">
+          {tabs.length > 0 && (
+            <div className="tabs">
+              {tabs.map((t) => (
+                <div
+                  key={t.path}
+                  className={"tab" + (t.path === activePath ? " active" : "")}
+                  title={t.path}
+                  onClick={() => setActivePath(t.path)}
+                  onMouseDown={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      closeTab(t.path);
+                    }
+                  }}
+                >
+                  {t.readOnly && <Lock size={11} className="tab-icon" />}
+                  <span className="tab-name">
+                    {t.path.replace(/^device:/, "").split("/").pop()}
+                  </span>
+                  {t.dirty && !t.readOnly && <span className="tab-dot" />}
+                  <span
+                    className="tab-close"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(t.path);
+                    }}
+                  >
+                    <X size={12} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
           <div className="editor-host">
             <CodeEditor
-              path={file?.path}
-              value={file?.content ?? ""}
-              readOnly={file?.readOnly ?? true}
-              dirty={file?.dirty ?? false}
-              onChange={(v) =>
-                file && !file.readOnly && setFile({ ...file, content: v, dirty: true })
+              activePath={activePath}
+              value={active?.content ?? ""}
+              openPaths={tabs.map((t) => t.path)}
+              readOnly={active?.readOnly ?? true}
+              onChange={(path, v) =>
+                setTabs((prev) =>
+                  prev.map((t) =>
+                    t.path === path && !t.readOnly ? { ...t, content: v, dirty: true } : t
+                  )
+                )
               }
               onCursor={(line, col) => setCursor({ line, col })}
             />
@@ -471,8 +550,12 @@ export default function App() {
       <StatusBar
         conn={conn}
         file={
-          file
-            ? { name: file.path.split("/").pop() ?? "", dirty: file.dirty, readOnly: file.readOnly }
+          active
+            ? {
+                name: active.path.split("/").pop() ?? "",
+                dirty: active.dirty,
+                readOnly: active.readOnly,
+              }
             : null
         }
         cursor={cursor}
