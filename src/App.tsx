@@ -210,6 +210,35 @@ export default function App() {
     return () => clearInterval(id);
   }, [reconcile]);
 
+  // Panel toggles: the macOS View menu emits these (⌘B/⌘J); off macOS we bind
+  // the same keys directly since there's no native menu bar.
+  useEffect(() => {
+    const toggleSidebar = () =>
+      persist({ ...settingsRef.current, sidebarOpen: !settingsRef.current.sidebarOpen });
+    const toggleOutput = () =>
+      persist({ ...settingsRef.current, consoleOpen: !settingsRef.current.consoleOpen });
+    const uns = [listen("toggle-sidebar", toggleSidebar), listen("toggle-output", toggleOutput)];
+
+    const isMac = navigator.userAgent.includes("Mac");
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "b") {
+        e.preventDefault();
+        toggleSidebar();
+      } else if (k === "j") {
+        e.preventDefault();
+        toggleOutput();
+      }
+    };
+    if (!isMac) window.addEventListener("keydown", onKey);
+
+    return () => {
+      uns.forEach((u) => u.then((f) => f()));
+      if (!isMac) window.removeEventListener("keydown", onKey);
+    };
+  }, [persist]);
+
   // ---- helpers ----
   const withBusy = async (label: string, fn: () => Promise<string | void>) => {
     setBusy(true);
@@ -362,6 +391,7 @@ export default function App() {
       )}
 
       <div className="body">
+        {settings.sidebarOpen && (
         <aside className="sidebar">
           <div className="sidebar-section">
             <div className="sidebar-header">
@@ -397,6 +427,7 @@ export default function App() {
             <FileTree nodes={deviceTree} onOpen={openDeviceFile} activePath={file?.path} />
           </div>
         </aside>
+        )}
 
         <main className="main">
           <div className="editor-host">
@@ -416,6 +447,7 @@ export default function App() {
               </div>
             )}
           </div>
+          {settings.consoleOpen && (
           <div className="console">
             <div className="console-header">
               <span>OUTPUT</span>
@@ -432,6 +464,7 @@ export default function App() {
               {log}
             </pre>
           </div>
+          )}
         </main>
       </div>
 

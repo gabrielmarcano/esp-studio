@@ -15,6 +15,8 @@ export interface Settings {
   offset: string; // flash offset: 0x1000 for ESP32, 0x0 for ESP8266/S3/C3
   compileOnUpload: boolean;
   projectDir: string; // currently opened project folder
+  sidebarOpen: boolean; // collapse toggle
+  consoleOpen: boolean; // collapse toggle
 }
 
 const DEFAULTS: Settings = {
@@ -28,6 +30,8 @@ const DEFAULTS: Settings = {
   offset: "0x1000",
   compileOnUpload: true,
   projectDir: "",
+  sidebarOpen: true,
+  consoleOpen: true,
 };
 
 const KEY = "esp-studio.settings";

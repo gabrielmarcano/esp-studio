@@ -57,12 +57,31 @@ pub fn run() {
                     .paste()
                     .select_all()
                     .build()?;
-                let menu = MenuBuilder::new(app).items(&[&app_menu, &edit_menu]).build()?;
+                let toggle_sidebar = MenuItemBuilder::with_id("toggle-sidebar", "Toggle Sidebar")
+                    .accelerator("CmdOrCtrl+B")
+                    .build(app)?;
+                let toggle_output = MenuItemBuilder::with_id("toggle-output", "Toggle Output Panel")
+                    .accelerator("CmdOrCtrl+J")
+                    .build(app)?;
+                let view_menu = SubmenuBuilder::new(app, "View")
+                    .item(&toggle_sidebar)
+                    .item(&toggle_output)
+                    .build()?;
+                let menu = MenuBuilder::new(app)
+                    .items(&[&app_menu, &edit_menu, &view_menu])
+                    .build()?;
                 app.set_menu(menu)?;
-                app.on_menu_event(move |app, event| {
-                    if event.id().as_ref() == "about" {
+                app.on_menu_event(move |app, event| match event.id().as_ref() {
+                    "about" => {
                         let _ = app.emit("open-about", ());
                     }
+                    "toggle-sidebar" => {
+                        let _ = app.emit("toggle-sidebar", ());
+                    }
+                    "toggle-output" => {
+                        let _ = app.emit("toggle-output", ());
+                    }
+                    _ => {}
                 });
             }
             Ok(())
